@@ -1,0 +1,6 @@
+sensor:
+  name:   camera
+  type:   sensor_msgs.msg.Image
+  topic:  agent_0/rgb/data
+  mode:   sub
+  serializer: 
