@@ -1,3 +1,5 @@
 src/unity_drone_sim_bridge/__pycache__/*
 src/unity_drone_sim_bridge/*/__pycache__/*
-srv/
+srv/*
+build/*
+include/*
