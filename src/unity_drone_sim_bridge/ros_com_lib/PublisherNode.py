@@ -27,32 +27,29 @@ class PublisherNode:
     def __set_params(self, dict):
         self.namespace      =   rospy.get_namespace()
         self.sensor_name    = dict.get("sensor")
-        self.topic_name     = dict.get("name")
+        self.topic_name     = dict.get("topic")
         self.global_name    = dict.get("mode") + "_node_" + dict.get("name")
-        self.topic_type     = dict.get("type")
-        
+        self.topic_type     = dict.get("type")        
         if dict.get("rate") is None:
             self.rate = 0
             self.pubData = self.__setAndPub
-        else: 
+        else:
             self.rate           = dict.get("rate")
-            self.pubData = self.__setData
+            self.pubData = self.__setMsg
 
         self.data           = None
         self.data2Msg       = dict.get("serializer")
 
     def __setAndPub(self,data):
-        self.setData(data)
-        self.pubData(data)
+        self.__setMsg(data)
+        self.__pubData()
 
-    def __setData(self,data):
-        self.data = data
+    def __setMsg(self,data):
+        print(data)
+        self.msg = self.data2Msg(data)
 
-    def getData(self):
-        return self.data
-
-    def __data2Msg(self):
-        pass
+    def getMsg(self):
+        return  self.msg
     
     def __pubData(self):
-        self.pub.publish(self.data2Msg())
+        self.pub.publish(self.getMsg())

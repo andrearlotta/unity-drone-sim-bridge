@@ -1,10 +1,10 @@
 import rospy
-import cv_bridge
 #from unity_drone_sim_bridge.srv import *
 from sensor_msgs.msg import *
 from std_msgs.msg import *
 from geometry_msgs.msg import *
-from cv_bridge import CvBridge
+import cv2
+from cv_bridge import CvBridge, CvBridgeError
 
 class SubscriberNode:
 
@@ -20,6 +20,7 @@ class SubscriberNode:
         self.global_name    = dict.get("mode") + "_node_" + dict.get("name")
         self.topic_type     = dict.get("type")
         self.data           = None
+        print((dict.get("serializer")))
         self.msg2Data       = dict.get("serializer")
 
     def __init_sub(self):
@@ -42,4 +43,5 @@ class SubscriberNode:
         pass
     
     def callBack(self,msg):
+
         self.setData(self.msg2Data(msg))

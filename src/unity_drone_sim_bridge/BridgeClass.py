@@ -4,10 +4,11 @@ from unity_drone_sim_bridge.ros_com_lib.ClientNode import ClientNode
 import rospy
 class BridgeClass:
     def __init__(self, components_list = []):
-        self.__publishers_dict   = self.__subscribers_dict = self.__clients_dict = {}
+        self.__publishers_dict   = {}
+        self.__subscribers_dict = {}
+        self.__clients_dict = {}
         self.SetupRosCom(components_list)
         rospy.init_node("sim_bridge", anonymous=True, log_level=rospy.DEBUG)
-        rospy.spin()
 
     def addComponent(self, sensor):
         if      sensor.get("mode") == "pub": self.__publishers_dict[sensor.get("name")]   =  PublisherNode(sensor)
@@ -19,21 +20,27 @@ class BridgeClass:
             self.addComponent(component_info)
     
     def getData(self):
-        return {sensor: sub.getData() for sensor, sub in self.__subscribers_dict.values()}
+        ret = {}
+        for sensor, sub in self.__subscribers_dict.items():
+            print(sensor)
+            while sub.getData() is None:
+                pass
+            ret[sensor]= sub.getData()
+        return ret
 
     def pubData(self, data_dict):
         for sensor, data in data_dict.items():
-            self.pubData(sensor, data)
+            self._pubData(sensor, data)
 
     def callServer(self, req_dict):
-        return {server: self.callServer(server,req) for server, req in req_dict.values()}
+        return {server: self._callServer(server,req) for server, req in req_dict.items()}
     
-    def getData(self, sensor):
+    def __getData(self, sensor):
         return self.__subscribers_dict[sensor].getData()
 
-    def pubData(self, pub, data):
+    def _pubData(self, pub, data):
         self.__publishers_dict[pub].pubData(data)
 
-    def callServer(self, server, req):
+    def _callServer(self, server, req):
         return self.__clients_dict[server].callServer(req)
     
