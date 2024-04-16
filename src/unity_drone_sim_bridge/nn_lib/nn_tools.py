@@ -11,6 +11,11 @@ import os
 import tf2onnx
 import do_mpc
 
+config = tf.compat.v1.ConfigProto()
+config.gpu_options.allow_growth = True
+session = tf.compat.v1.Session(config=config)
+
+
 def std_norm(x):
     return (x - np.mean(x)) / np.std(x)
 
@@ -87,6 +92,20 @@ def ___trees_satisfy_conditions(drone_pos, drone_yaw, tree_pos, thresh_distance=
     
     return indices_np
 
+
+def i_see_tree_casadi(drone_tree_pos_sym, drone_yaw_sym,thresh_distance=7):
+    n_trees = drone_tree_pos_sym.shape[0]    
+    # Calculate distance between the drone and each tree
+    distances = ca.sqrt(ca.sum2(drone_tree_pos_sym**2))
+    # Calculate direction from drone to each tree
+    drone_dir = ca.vertcat(ca.cos(drone_yaw_sym.T), ca.sin(drone_yaw_sym.T))
+    tree_directions_norm = drone_tree_pos_sym / (distances@np.ones((1,2)))
+    # Check conditions
+    indices =  distances < thresh_distance
+    alignment = (ca.sum2((np.ones((n_trees,1))@drone_dir.T) * tree_directions_norm) < - 0.85)
+    return ca.logic_and(alignment,indices)
+
+
 def trees_satisfy_conditions_casadi(drone_pos_sym, drone_yaw_sym, tree_pos_sym, thresh_distance=7):
     # Convert inputs to CasADi symbols
     #drone_pos_sym = ca.MX(drone_pos.reshape(1,2))
@@ -117,7 +136,7 @@ def trees_satisfy_conditions(drone_pos, drone_yaw, tree_pos, thresh_distance=7):
     return indices
 
 
-def loadGp(mode='scikit'):
+def loadGp(mode='gpflow'):
     dataset_path = "/home/pantheon/lstm_sine_fitting/qi_csv_datasets/drone_round_sun_012_SaturationAndLuminance.csv"
     dataset_array = np.array(list(csv.reader(open(dataset_path))), dtype=float)[:1080]
     y = dataset_array #random.choice(dataset_array).reshape(-1, 1)
@@ -146,25 +165,68 @@ def loadGp(mode='scikit'):
         )
         gaussian_process = GaussianProcessRegressor(kernel=kernel)
         gaussian_process.fit(X_train, y_train)
-        gaussian_process
+    elif mode =='onnx':
+        import skl2onnx
+        import onnxruntime
+        import onnxconverter_common
+        kernel = 1.0 * ExpSineSquared(
+            length_scale=1.0,
+            periodicity=1.0,
+        )
+        gaussian_process = GaussianProcessRegressor(kernel=kernel)
+        gaussian_process.fit(X_train, y_train)
+        initial_type = [("X", onnxconverter_common.FloatTensorType([1, 1]))]
+        initial_type = [('X', onnxconverter_common.FloatTensorType([None, X_train.shape[1]]))]
+        onx =  skl2onnx.convert_sklearn(gaussian_process, initial_types=initial_type,target_opset=9)
+        #onx64 = skl2onnx.convert_sklearn(gaussian_process, initial_types=initial_type, target_opset=19)
+        onx64 = skl2onnx.to_onnx(gaussian_process, X[:1])
+        
+        sess64 = onnxruntime.InferenceSession(
+            onx64.SerializeToString(), providers=["CPUExecutionProvider"]
+        )
+
+        from onnxsim import simplify
+
+        # convert model
+        model_simp, check = simplify(onx)
+
+        assert check, "Simplified ONNX model could not be validated"
+        gaussian_process = do_mpc.sysid.ONNXConversion(onx)
+        print(gaussian_process) 
     elif mode == 'gpflow':
-        model = gpflow.models.GPR(X_train.reshape(-1,1), y_train.reshape(-1,1), kernel=gpflow.kernels.Periodic(gpflow.kernels.SquaredExponential(variance=.01, lengthscales=1.0), period=1.0), mean_function=None)
+        #model = gpflow.models.GPR(X_train.reshape(-1,1), y_train.reshape(-1,1), kernel=gpflow.kernels.Periodic(gpflow.kernels.SquaredExponential(variance=.01, lengthscales=1.0), period=1.0), mean_function=None)
+        model = gpflow.models.GPR((X_train.reshape(-1,1), y_train.reshape(-1,1)), gpflow.kernels.Constant(1) + gpflow.kernels.Linear(1) + gpflow.kernels.White(1) + gpflow.kernels.RBF(1), mean_function=None, noise_variance=1.0)
+        #opt = gpflow.optimizers.Scipy()
+        #opt.minimize(model.training_loss, model.trainable_variables, options=dict(maxiter=100))
+        # Package the resulting regression model in a CasADi callback
         class GPR(casadi.Callback):
-            def __init__(self, name,  opts={}):
+            def __init__(self, name, opts: dict = None):
+                if opts is None:
+                    opts = dict()
+
                 casadi.Callback.__init__(self)
                 self.construct(name, opts)
 
             def eval(self, arg):
-                [mean,_] = model.predict_y(np.array(arg[0]))
-                return [mean]
+                [mean, _] = model.predict_f(np.array(arg[0]))
+                return [mean.numpy()]
 
-            # After instantiating the Callback, we end up with a plain-old CasADi function object which we can evaluate numerically or symbolically. One caveat, the user is responsible of keeping at least one reference to this Function.
 
-            # x = casadi.MX.sym("x")
-            # solver = casadi.nlpsol("solver","ipopt",{"x":x,"f":gpr(x)})
-            # res = solver(x0=5)
+        # Instantiate the Callback (make sure to keep a reference to it!)
+        gpr = GPR('GPR', opts={"enable_fd": True})
+        print(gpr)
 
-        gaussian_process = GPR('GPR', {"enable_fd":True})
+        ## Find the minimum of the regression model
+        #x = casadi.MX.sym("x")
+        #solver = casadi.nlpsol("solver", "ipopt", {"x": x, "f": gpr(x)})
+        #res = solver(x0=5)
+
+        #from pylab import plot, legend, savefig
+        #plot(res["x"], gpr(res["x"]), 'k*', markersize=10, label="Function minimum by CasADi/Ipopt")
+        #legend()
+        #savefig('gpflow1d_min.png', bbox_inches='tight')
+        return gpr
+
     elif mode == 'onnx':
         model = gpflow.models.GPR(X_train, y_train, gpflow.kernels.Periodic(gpflow.kernels.SquaredExponential(variance=.01, lengthscales=1.0), period=1.0))
         model_input_signature = [

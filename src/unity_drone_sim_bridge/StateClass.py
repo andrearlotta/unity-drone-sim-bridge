@@ -26,7 +26,7 @@ class StateClass:
     model: do_mpc.model.Model = field(init=False)
     
     def __post_init__(self):
-        self.model = do_mpc.model.Model(self.model_type)
+        self.model = do_mpc.model.Model(self.model_type, 'MX')
 
     def populateModel(self):
         # Assuming 'do_mpc' model creation
