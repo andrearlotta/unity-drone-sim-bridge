@@ -11,7 +11,7 @@ import do_mpc
 import casadi as ca
 import rospy
 from std_msgs.msg import Empty
-
+import numpy as np
 @dataclass
 class DroneState(StateClass):
     trees_pos:   np.ndarray = field(default_factory=lambda: np.zeros(10))
@@ -37,15 +37,17 @@ class DroneState(StateClass):
             'pos_x'     : (lambda mdl: mdl.x[f'pos_x'] + np.ones((len(self.trees_pos),1))@mdl.u[f'pos_x'] - self.param['tree_x']),
             'pos_y'     : (lambda mdl: mdl.x[f'pos_y'] + np.ones((len(self.trees_pos),1))@mdl.u[f'pos_y'] - self.param['tree_y']),
             'yaw'       : (lambda mdl: mdl.x[f'yaw'] + mdl.u[f'yaw']),
-            'lambda'    : (lambda mdl: mdl.x["lambda"]), #ca.dot(mdl.x[f'lambda'], mdl.tvp[f'hat_lambda_z'])/(mdl.x[f'lambda'].T@mdl.tvp[f'hat_lambda_z']))
+            'lambda'    : (lambda mdl:  0.5 * ca.logic_not(i_see_tree_casadi(ca.horzcat(mdl.x['pos_x'],mdl.x['pos_y']),mdl.x[f'yaw'])) * np.ones((len(self.trees_pos),1)) + i_see_tree_casadi(ca.horzcat(mdl.x['pos_x'],mdl.x['pos_y']),mdl.x[f'yaw']) * \
+                            (np.sin(mdl.x['yaw'])/3 + 0.5)) , 
+                            #ca.dot(mdl.x[f'lambda'], mdl.tvp[f'hat_lambda_z'])/(mdl.x[f'lambda'].T@mdl.tvp[f'hat_lambda_z']))
         }
 
-        self.x_k    = np.array([0.0]*len(self.trees_pos)+  [0.0]*len(self.trees_pos)+ [0.1] + [0.5]*len(self.trees_pos))
+        self.x_k    = np.array([0.0]*len(self.trees_pos)+  [0.0]*len(self.trees_pos)+ [0.0] + [0.5]*len(self.trees_pos))
 
 
     def update(self, y_z):
 
-        lambda_z = np.array([fake_nn(img_2_qi(y_z['image']))])
+        lambda_z = np.array([(np.sin(y_z['gps'][-1])/3 + 0.5)])
         
         self.x_k[:2*len(self.trees_pos)+1] = np.concatenate((y_z['gps'][0]- self.param['tree_x'],  y_z['gps'][1]- self.param['tree_y'],[y_z['gps'][-1]]))
         
@@ -62,10 +64,10 @@ class DroneState(StateClass):
 class DroneMpc(MpcClass):
     def __post_init__(self):
         #entropy H = -lambda*ln(lambda) and then we want to max the negative entropy (max{-H})
-        self.lterm= lambda mdl: ca.sum1((-mdl.x['lambda']*np.log(mdl.x['lambda']))**2)
-        self.mterm= lambda mdl: ca.sum1((-mdl.x['lambda']*np.log(mdl.x['lambda']))**2)
+        self.lterm= lambda mdl: ca.sum1((-mdl.x['lambda']*np.log(mdl.x['lambda'])))
+        self.mterm= lambda mdl: ca.sum1((-mdl.x['lambda']*np.log(mdl.x['lambda'])))
         self.bounds_dict= {
-            '_u': {'pos_x': {'upper': [1.0], 'lower': [-1.0]}, 'pos_y': {'upper': [1.0], 'lower': [-1.0]}, 'yaw': {'upper': [np.pi], 'lower': [-np.pi]}},
+            '_u': {'pos_x': {'upper': [1.0], 'lower': [-1.0]}, 'pos_y': {'upper': [1.0], 'lower': [-1.0]}, 'yaw': {'upper': [np.pi/10], 'lower': [-np.pi/10]}},
         }
         super().__post_init__()
 
@@ -87,7 +89,7 @@ class MainClass:
         self.mpc.set_tvp_fun(tvp_fun)
         self.mpc.setup()
         print(self.mpc.bounds)
-        for i in range(100):
+        for i in range(1000):
             print('ok')
             self.loop(i)
         rospy.spin()
