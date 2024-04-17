@@ -37,8 +37,7 @@ class DroneState(StateClass):
             'pos_x'     : (lambda mdl: mdl.x[f'pos_x'] + np.ones((len(self.trees_pos),1))@mdl.u[f'pos_x'] - self.param['tree_x']),
             'pos_y'     : (lambda mdl: mdl.x[f'pos_y'] + np.ones((len(self.trees_pos),1))@mdl.u[f'pos_y'] - self.param['tree_y']),
             'yaw'       : (lambda mdl: mdl.x[f'yaw'] + mdl.u[f'yaw']),
-            'lambda'    : (lambda mdl:  0.5 * ca.logic_not(i_see_tree_casadi(ca.horzcat(mdl.x['pos_x'],mdl.x['pos_y']),mdl.x[f'yaw'])) * np.ones((len(self.trees_pos),1)) + i_see_tree_casadi(ca.horzcat(mdl.x['pos_x'],mdl.x['pos_y']),mdl.x[f'yaw']) * \
-                            (np.sin(mdl.x['yaw'])/3 + 0.5)) , 
+            'lambda'    : (lambda mdl: bayes(mdl.x[f'lambda'], g(mdl.x[f'lambda'],mdl.x['pos_x'],mdl.x['pos_y'],mdl.x[f'yaw'], self.gp))), 
                             #ca.dot(mdl.x[f'lambda'], mdl.tvp[f'hat_lambda_z'])/(mdl.x[f'lambda'].T@mdl.tvp[f'hat_lambda_z']))
         }
 
@@ -47,8 +46,7 @@ class DroneState(StateClass):
 
     def update(self, y_z):
 
-        lambda_z = np.array([(np.sin(y_z['gps'][-1])/3 + 0.5)])
-        
+        lambda_z = np.array([fake_nn(img_2_qi(y_z['image']))])
         self.x_k[:2*len(self.trees_pos)+1] = np.concatenate((y_z['gps'][0]- self.param['tree_x'],  y_z['gps'][1]- self.param['tree_y'],[y_z['gps'][-1]]))
         
         valid_lambas =trees_satisfy_conditions(y_z['gps'][:2], 
@@ -57,7 +55,7 @@ class DroneState(StateClass):
         
         for el in valid_lambas:
             i = 2*len(self.trees_pos) + el +1
-            self.x_k[i] =  np.dot(np.asarray([self.x_k[i]]),lambda_z)/(np.asarray([self.x_k[i]]).T@lambda_z)
+            self.x_k[i] = np.asarray([(self.x_k[i]*lambda_z) / ((self.x_k[i])*(lambda_z) + (1-self.x_k[i]) * (1-lambda_z))])
 
 
 @dataclass
@@ -100,17 +98,18 @@ class MainClass:
         self.bridge.pubData(self.u0)
         print(self.u0)
         print('----')
+
         # Observe
         # Call the bridge for pose and image
         # Process image to get lambda_zk
         print('subscribed')
         self.state.update(self.bridge.getData())
         print(self.state.x_k.reshape(-1,1))
-
         if i ==0:
             self.mpc.x0 = self.state.x_k.reshape(-1,1)
             print('----')
             self.mpc.set_initial_guess()
+
         # state.update(robot_pose, lambda_zk)
         # In state.update:
         # def update(self, robot_pose, lambda_zk):
