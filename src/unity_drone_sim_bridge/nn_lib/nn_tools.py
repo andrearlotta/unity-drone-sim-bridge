@@ -1,7 +1,6 @@
 import numpy as np
 import tensorflow as tf
 import keras
-import gpflow
 import casadi
 from sklearn.gaussian_process.kernels import ExpSineSquared
 from sklearn.gaussian_process import GaussianProcessRegressor
@@ -10,6 +9,9 @@ import csv
 import os
 import tf2onnx
 import do_mpc
+import math
+import torch
+import gpytorch
 
 config = tf.compat.v1.ConfigProto()
 config.gpu_options.allow_growth = True
@@ -58,7 +60,7 @@ def fake_nn(x):
     x_min = 1.125 
     x_max = 1.260 
     y_min = 0.5
-    y_max = 0.8
+    y_max = 0.7
     
     x_range = x_max - x_min
     half_x_range = x_range / 2
@@ -92,19 +94,31 @@ def ___trees_satisfy_conditions(drone_pos, drone_yaw, tree_pos, thresh_distance=
     
     return indices_np
 
+def g(lambda_k,drone_tree_pos_sym_x,drone_tree_pos_sym_y, drone_yaw_sym, nn, thresh_distance=7):
 
-def i_see_tree_casadi(drone_tree_pos_sym, drone_yaw_sym,thresh_distance=7):
-    n_trees = drone_tree_pos_sym.shape[0]    
-    # Calculate distance between the drone and each tree
-    distances = ca.sqrt(ca.sum2(drone_tree_pos_sym**2))
+    #Check trees 
+    drone_tree_pos_sym = ca.horzcat(drone_tree_pos_sym_x,drone_tree_pos_sym_y)
+    n_trees = drone_tree_pos_sym.shape[0]
+
     # Calculate direction from drone to each tree
     drone_dir = ca.vertcat(ca.cos(drone_yaw_sym.T), ca.sin(drone_yaw_sym.T))
+
+    # Calculate distance between the drone and each tree
+    distances = ca.sqrt(ca.sum2(drone_tree_pos_sym**2))
     tree_directions_norm = drone_tree_pos_sym / (distances@np.ones((1,2)))
+
     # Check conditions
     indices =  distances < thresh_distance
-    alignment = (ca.sum2((np.ones((n_trees,1))@drone_dir.T) * tree_directions_norm) < - 0.85)
-    return ca.logic_and(alignment,indices)
+    alignment = (ca.sum2((np.ones((n_trees,1))@drone_dir.T) * tree_directions_norm) < -0.85)
+    #print(ca.evalf(alignment))
+    #(lambda mdl: mdl.x[f'lamda'] * ca.logic_not(i_see_tree_casadi(ca.horzcat(mdl.x['pos_x'],mdl.x['pos_y']),mdl.x[f'yaw'])) * np.ones((len(self.trees_pos),1)) + i_see_tree_casadi(ca.horzcat(mdl.x['pos_x'],mdl.x['pos_y']),mdl.x[f'yaw']) * \
+    #                        (np.sin(mdl.x['yaw'])/3 + 0.5))
 
+    return  0.5 * np.ones(lambda_k.shape) * ca.logic_not(ca.logic_and(alignment,indices)) + \
+            ca.logic_and(alignment,indices) * nn(drone_yaw_sym)
+
+def bayes(lambda_k,y_z):
+    return ca.times(lambda_k, y_z) / (ca.times(lambda_k, y_z) + (1-lambda_k) * (1-y_z))
 
 def trees_satisfy_conditions_casadi(drone_pos_sym, drone_yaw_sym, tree_pos_sym, thresh_distance=7):
     # Convert inputs to CasADi symbols
@@ -123,7 +137,6 @@ def trees_satisfy_conditions_casadi(drone_pos_sym, drone_yaw_sym, tree_pos_sym, 
     love = (ca.sum2((np.ones((n_trees,1))@drone_dir.T) * tree_directions_norm) > 0.9)
     return ca.logic_and(love,indices)
 
-
 def trees_satisfy_conditions(drone_pos, drone_yaw, tree_pos, thresh_distance=7):
     # Calculate distance between the drone and each tree
     distances = np.linalg.norm(tree_pos - drone_pos, axis=1)
@@ -135,8 +148,7 @@ def trees_satisfy_conditions(drone_pos, drone_yaw, tree_pos, thresh_distance=7):
     indices = np.where((distances < thresh_distance) & (np.sum(drone_dir * tree_directions_norm, axis=1) > 0.9))[0]
     return indices
 
-
-def loadGp(mode='gpflow'):
+def loadGp(mode='gpytorch'):
     dataset_path = "/home/pantheon/lstm_sine_fitting/qi_csv_datasets/drone_round_sun_012_SaturationAndLuminance.csv"
     dataset_array = np.array(list(csv.reader(open(dataset_path))), dtype=float)[:1080]
     y = dataset_array #random.choice(dataset_array).reshape(-1, 1)
@@ -192,7 +204,45 @@ def loadGp(mode='gpflow'):
 
         assert check, "Simplified ONNX model could not be validated"
         gaussian_process = do_mpc.sysid.ONNXConversion(onx)
-        print(gaussian_process) 
+        print(gaussian_process)
+        gaussian_process = l4c_model
+    elif mode == 'gpytorch':
+        class ExactGPModel(gpytorch.models.ExactGP):
+            def __init__(self, train_x, train_y, likelihood):
+                super(ExactGPModel, self).__init__(train_x, train_y, likelihood)
+                self.mean_module = gpytorch.means.ConstantMean()
+                self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+
+            def forward(self, x):
+                mean_x = self.mean_module(x)
+                covar_x = self.covar_module(x)
+                return gpytorch.distributions.MultivariateNormal(mean_x, covar_x).mean
+
+        # initialize likelihood and model
+        likelihood = gpytorch.likelihoods.GaussianLikelihood()
+        model = ExactGPModel(torch.from_numpy(X_train.reshape(-1)), 
+                             torch.from_numpy(y_train.reshape(-1)), 
+                             likelihood)
+        
+        class Sin(torch.nn.Module):
+            def forward(self, input: torch.Tensor) -> torch.Tensor:
+                return torch.sin(input)
+
+        class SimpleModule(torch.nn.Module):
+            def __init__(self, input_size, output_size):
+                super(SimpleModule, self).__init__()
+                self.linear = torch.nn.Linear(input_size, output_size)
+                self.relu = torch.nn.ReLU()
+
+            def forward(self, x):
+                x = self.linear(x)
+                x = self.relu(x)
+                return x
+            
+        import l4casadi as l4c
+        nn = Sin()
+        l4c_model = l4c.L4CasADi(nn, model_expects_batch_dim=True, device='cpu')  # device='cuda' for GPU
+        gaussian_process = l4c_model
     elif mode == 'gpflow':
         #model = gpflow.models.GPR(X_train.reshape(-1,1), y_train.reshape(-1,1), kernel=gpflow.kernels.Periodic(gpflow.kernels.SquaredExponential(variance=.01, lengthscales=1.0), period=1.0), mean_function=None)
         model = gpflow.models.GPR((X_train.reshape(-1,1), y_train.reshape(-1,1)), gpflow.kernels.Constant(1) + gpflow.kernels.Linear(1) + gpflow.kernels.White(1) + gpflow.kernels.RBF(1), mean_function=None, noise_variance=1.0)
