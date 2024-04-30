@@ -12,6 +12,8 @@ import do_mpc
 import math
 import torch
 import gpytorch
+from unity_drone_sim_bridge.nn_lib.gp_nn_tools import GP_NN, loadDatabase, loadSyntheticData, LoadCaGP
+
 
 config = tf.compat.v1.ConfigProto()
 config.gpu_options.allow_growth = True
@@ -94,28 +96,8 @@ def ___trees_satisfy_conditions(drone_pos, drone_yaw, tree_pos, thresh_distance=
     
     return indices_np
 
-def g(lambda_k,drone_tree_pos_sym_x,drone_tree_pos_sym_y, drone_yaw_sym, nn, thresh_distance=7):
-
-    #Check trees 
-    drone_tree_pos_sym = ca.horzcat(drone_tree_pos_sym_x,drone_tree_pos_sym_y)
-    n_trees = drone_tree_pos_sym.shape[0]
-
-    # Calculate direction from drone to each tree
-    drone_dir = ca.vertcat(ca.cos(drone_yaw_sym.T), ca.sin(drone_yaw_sym.T))
-
-    # Calculate distance between the drone and each tree
-    distances = ca.sqrt(ca.sum2(drone_tree_pos_sym**2))
-    tree_directions_norm = drone_tree_pos_sym / (distances@np.ones((1,2)))
-
-    # Check conditions
-    indices =  distances < thresh_distance
-    alignment = (ca.sum2((np.ones((n_trees,1))@drone_dir.T) * tree_directions_norm) < -0.85)
-    #print(ca.evalf(alignment))
-    #(lambda mdl: mdl.x[f'lamda'] * ca.logic_not(i_see_tree_casadi(ca.horzcat(mdl.x['pos_x'],mdl.x['pos_y']),mdl.x[f'yaw'])) * np.ones((len(self.trees_pos),1)) + i_see_tree_casadi(ca.horzcat(mdl.x['pos_x'],mdl.x['pos_y']),mdl.x[f'yaw']) * \
-    #                        (np.sin(mdl.x['yaw'])/3 + 0.5))
-
-    return  0.5 * np.ones(lambda_k.shape) * ca.logic_not(ca.logic_and(alignment,indices)) + \
-            ca.logic_and(alignment,indices) * nn(drone_yaw_sym)
+def g(drone_yaw_sym, gp, thresh_distance=7):
+    return  np.ones(drone_yaw_sym.shape) * gp.predict(ca.fmod(drone_yaw_sym,np.pi), [], np.zeros((1,1)))[0] #np.ones(drone_yaw_sym.shape) * ca.cos(drone_yaw_sym) + 1
 
 def bayes(lambda_k,y_z):
     return ca.times(lambda_k, y_z) / (ca.times(lambda_k, y_z) + (1-lambda_k) * (1-y_z))
@@ -148,106 +130,48 @@ def trees_satisfy_conditions(drone_pos, drone_yaw, tree_pos, thresh_distance=7):
     indices = np.where((distances < thresh_distance) & (np.sum(drone_dir * tree_directions_norm, axis=1) > 0.9))[0]
     return indices
 
-def loadGp(mode='gpytorch'):
-    dataset_path = "/home/pantheon/lstm_sine_fitting/qi_csv_datasets/drone_round_sun_012_SaturationAndLuminance.csv"
-    dataset_array = np.array(list(csv.reader(open(dataset_path))), dtype=float)[:1080]
-    y = dataset_array #random.choice(dataset_array).reshape(-1, 1)
-    X = np.linspace(0,360, len(y)).reshape(-1, 1)
-
-    # Set a seed for reproducibility (optional)
-    np.random.seed(42)
-
-    # Define the percentage of data to include in the subset
-    subset_percentage = 0.1 # Adjust as needed
-
-    # Generate random indices for the subset
-    num_samples = len(X)
-    subset_size = int(subset_percentage * num_samples)
-
-    subset_indices = np.random.choice(num_samples, size=subset_size, replace=False)
-
-    # Create subsets of x and y based on the random indices
-    X_train = X[subset_indices]
-    y_train = y[subset_indices]
-
-    if mode == 'scikit':
+def loadGp(mode='GP_MPC'):
+    if mode == 'scikit' or mode =='onnx':
         kernel = 1.0 * ExpSineSquared(
             length_scale=1.0,
             periodicity=1.0,
         )
         gaussian_process = GaussianProcessRegressor(kernel=kernel)
         gaussian_process.fit(X_train, y_train)
-    elif mode =='onnx':
-        import skl2onnx
-        import onnxruntime
-        import onnxconverter_common
-        kernel = 1.0 * ExpSineSquared(
-            length_scale=1.0,
-            periodicity=1.0,
-        )
-        gaussian_process = GaussianProcessRegressor(kernel=kernel)
-        gaussian_process.fit(X_train, y_train)
-        initial_type = [("X", onnxconverter_common.FloatTensorType([1, 1]))]
-        initial_type = [('X', onnxconverter_common.FloatTensorType([None, X_train.shape[1]]))]
-        onx =  skl2onnx.convert_sklearn(gaussian_process, initial_types=initial_type,target_opset=9)
-        #onx64 = skl2onnx.convert_sklearn(gaussian_process, initial_types=initial_type, target_opset=19)
-        onx64 = skl2onnx.to_onnx(gaussian_process, X[:1])
-        
-        sess64 = onnxruntime.InferenceSession(
-            onx64.SerializeToString(), providers=["CPUExecutionProvider"]
-        )
 
-        from onnxsim import simplify
+        if mode =='onnx':
+            import skl2onnx
+            import onnxruntime
+            import onnxconverter_common
+            initial_type = [("X", onnxconverter_common.FloatTensorType([1, 1]))]
+            initial_type = [('X', onnxconverter_common.FloatTensorType([None, X_train.shape[1]]))]
+            onx =  skl2onnx.convert_sklearn(gaussian_process, initial_types=initial_type,target_opset=9)
+            gaussian_process = do_mpc.sysid.ONNXConversion(onx)
 
-        # convert model
-        model_simp, check = simplify(onx)
-
-        assert check, "Simplified ONNX model could not be validated"
-        gaussian_process = do_mpc.sysid.ONNXConversion(onx)
-        print(gaussian_process)
-        gaussian_process = l4c_model
-    elif mode == 'gpytorch':
-        class ExactGPModel(gpytorch.models.ExactGP):
-            def __init__(self, train_x, train_y, likelihood):
-                super(ExactGPModel, self).__init__(train_x, train_y, likelihood)
-                self.mean_module = gpytorch.means.ConstantMean()
-                self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
-
-            def forward(self, x):
-                mean_x = self.mean_module(x)
-                covar_x = self.covar_module(x)
-                return gpytorch.distributions.MultivariateNormal(mean_x, covar_x).mean
-
-        # initialize likelihood and model
-        likelihood = gpytorch.likelihoods.GaussianLikelihood()
-        model = ExactGPModel(torch.from_numpy(X_train.reshape(-1)), 
-                             torch.from_numpy(y_train.reshape(-1)), 
-                             likelihood)
-        
-        class Sin(torch.nn.Module):
-            def forward(self, input: torch.Tensor) -> torch.Tensor:
-                return torch.sin(input)
-
-        class SimpleModule(torch.nn.Module):
-            def __init__(self, input_size, output_size):
-                super(SimpleModule, self).__init__()
-                self.linear = torch.nn.Linear(input_size, output_size)
-                self.relu = torch.nn.ReLU()
-
-            def forward(self, x):
-                x = self.linear(x)
-                x = self.relu(x)
-                return x
+            #onx64 = skl2onnx.convert_sklearn(gaussian_process, initial_types=initial_type, target_opset=19)
+            onx64 = skl2onnx.to_onnx(gaussian_process, X[:1])
             
+            sess64 = onnxruntime.InferenceSession(
+                onx64.SerializeToString(), providers=["CPUExecutionProvider"]
+            )
+
+            from onnxsim import simplify
+            # convert model
+            model_simp, check = simplify(onx)
+            assert check, "Simplified ONNX model could not be validated"
+
+    elif mode == 'gpytorch':
         import l4casadi as l4c
-        nn = Sin()
-        l4c_model = l4c.L4CasADi(nn, model_expects_batch_dim=True, device='cpu')  # device='cuda' for GPU
+        nn = GP_NN()
+        l4c_model = l4c.L4CasADi(nn, model_expects_batch_dim=True, device='cpu', mutable=True)  # device='cuda' for GPU
         gaussian_process = l4c_model
+
     elif mode == 'gpflow':
-        #model = gpflow.models.GPR(X_train.reshape(-1,1), y_train.reshape(-1,1), kernel=gpflow.kernels.Periodic(gpflow.kernels.SquaredExponential(variance=.01, lengthscales=1.0), period=1.0), mean_function=None)
+        import gpflow
+        X_train, y_train = loadDatabase()
         model = gpflow.models.GPR((X_train.reshape(-1,1), y_train.reshape(-1,1)), gpflow.kernels.Constant(1) + gpflow.kernels.Linear(1) + gpflow.kernels.White(1) + gpflow.kernels.RBF(1), mean_function=None, noise_variance=1.0)
-        #opt = gpflow.optimizers.Scipy()
-        #opt.minimize(model.training_loss, model.trainable_variables, options=dict(maxiter=100))
+        opt = gpflow.optimizers.Scipy()
+        opt.minimize(model.training_loss, model.trainable_variables, options=dict(maxiter=100))
         # Package the resulting regression model in a CasADi callback
         class GPR(casadi.Callback):
             def __init__(self, name, opts: dict = None):
@@ -260,45 +184,12 @@ def loadGp(mode='gpytorch'):
             def eval(self, arg):
                 [mean, _] = model.predict_f(np.array(arg[0]))
                 return [mean.numpy()]
-
-
         # Instantiate the Callback (make sure to keep a reference to it!)
         gpr = GPR('GPR', opts={"enable_fd": True})
         print(gpr)
-
-        ## Find the minimum of the regression model
-        #x = casadi.MX.sym("x")
-        #solver = casadi.nlpsol("solver", "ipopt", {"x": x, "f": gpr(x)})
-        #res = solver(x0=5)
-
-        #from pylab import plot, legend, savefig
-        #plot(res["x"], gpr(res["x"]), 'k*', markersize=10, label="Function minimum by CasADi/Ipopt")
-        #legend()
-        #savefig('gpflow1d_min.png', bbox_inches='tight')
         return gpr
 
-    elif mode == 'onnx':
-        model = gpflow.models.GPR(X_train, y_train, gpflow.kernels.Periodic(gpflow.kernels.SquaredExponential(variance=.01, lengthscales=1.0), period=1.0))
-        model_input_signature = [
-            tf.TensorSpec(np.array((1, 1)), name='input'),
-            ]
-        output_path = os.path.join('models', 'model.onnx')
-
-        onnx_model, _ = tf2onnx.convert.from_keras(model,
-                output_path=output_path,
-                input_signature=model_input_signature
-        )
-        return do_mpc.sysid.ONNXConversion(onnx_model) #casadi_converter
-
-        # Inputs can be numpy arrays
-        #casadi_converter.convert(input=np.ones((1,3)))
-
-        # or CasADi expressions
-        #x = casadi.SX.sym('x',1,3)
-        #casadi_converter.convert(input=x)
-
-        #Query the instance with the respective layer or node name to obtain the CasADi expression of the respective layer or node:
-
-        #print(casadi_converter['output'])
-
+    elif mode == 'GP_MPC':
+        return LoadCaGP()
+        
     return gaussian_process
