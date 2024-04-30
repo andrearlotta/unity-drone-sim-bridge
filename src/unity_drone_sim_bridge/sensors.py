@@ -36,6 +36,6 @@ SENSORS = [
     "type":  Pose,
     "topic": "agent_0/cmd/pose",
     "mode":  "pub",
-    "serializer":  lambda arr: Pose(position=Point(x=arr[0,0], y=arr[1,0], z=0.0), orientation=Quaternion(*tf.transformations.quaternion_from_euler(0, 0, arr[2,0]))),
+    "serializer":  lambda arr: Pose(position=Point(x=0.0, y=0.0, z=0.0), orientation=Quaternion(*tf.transformations.quaternion_from_euler(0, 0, arr[0,0]))),
   }
 ]

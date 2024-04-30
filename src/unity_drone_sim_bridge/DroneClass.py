@@ -23,49 +23,37 @@ class DroneState(StateClass):
         '''
         self.gp = loadGp()
 
-        self.param = {
-            'tree_x': self.trees_pos[:,0],
-            'tree_y': self.trees_pos[:,1],
-        }
         self.state_dict= {
-        '_x':   {'pos_x':len(self.trees_pos),'pos_y':len(self.trees_pos), 'yaw':1, 'lambda':len(self.trees_pos)},
-        '_u':   {'pos_x':1, 'pos_y':1, 'yaw':1},
+        '_x':   {'yaw':1, 'lambda':1},
+        '_u':   {'yaw':1},
         '_tvp': {'hat_lambda_z':len(self.trees_pos)}, #g(X)
         }
 
         self.rsh_dict = {
-            'pos_x'     : (lambda mdl: mdl.x[f'pos_x'] + np.ones((len(self.trees_pos),1))@mdl.u[f'pos_x'] - self.param['tree_x']),
-            'pos_y'     : (lambda mdl: mdl.x[f'pos_y'] + np.ones((len(self.trees_pos),1))@mdl.u[f'pos_y'] - self.param['tree_y']),
-            'yaw'       : (lambda mdl: mdl.x[f'yaw'] + mdl.u[f'yaw']),
-            'lambda'    : (lambda mdl: bayes(mdl.x[f'lambda'], g(mdl.x[f'lambda'],mdl.x['pos_x'],mdl.x['pos_y'],mdl.x[f'yaw'], self.gp))), 
+            'yaw'       : (lambda mdl: mdl.u[f'yaw']),
+            'lambda'    : (lambda mdl:  g(mdl.x[f'yaw'], self.gp)), 
                             #ca.dot(mdl.x[f'lambda'], mdl.tvp[f'hat_lambda_z'])/(mdl.x[f'lambda'].T@mdl.tvp[f'hat_lambda_z']))
         }
 
-        self.x_k    = np.array([0.0]*len(self.trees_pos)+  [0.0]*len(self.trees_pos)+ [0.0] + [0.5]*len(self.trees_pos))
+        self.x_k    = np.array([0.0]*len(self.trees_pos)+ [0.5]*len(self.trees_pos))
 
 
     def update(self, y_z):
 
         lambda_z = np.array([fake_nn(img_2_qi(y_z['image']))])
-        self.x_k[:2*len(self.trees_pos)+1] = np.concatenate((y_z['gps'][0]- self.param['tree_x'],  y_z['gps'][1]- self.param['tree_y'],[y_z['gps'][-1]]))
-        
-        valid_lambas =trees_satisfy_conditions(y_z['gps'][:2], 
-                                 y_z['gps'][-1], 
-                                 np.stack((self.param['tree_x'],self.param['tree_y']),axis=1))
-        
-        for el in valid_lambas:
-            i = 2*len(self.trees_pos) + el +1
-            self.x_k[i] = np.asarray([(self.x_k[i]*lambda_z) / ((self.x_k[i])*(lambda_z) + (1-self.x_k[i]) * (1-lambda_z))])
+        print(y_z['gps'])
+        self.x_k[0] = np.array([y_z['gps'][-1]])
+        self.x_k[1] =   2.0 - (np.cos(np.array([y_z['gps'][-1]])) + 1.0) #np.asarray([(self.x_k[1]*lambda_z) / ((self.x_k[1])*(lambda_z) + (1-self.x_k[1]) * (1-lambda_z))])
 
 
 @dataclass
 class DroneMpc(MpcClass):
     def __post_init__(self):
         #entropy H = -lambda*ln(lambda) and then we want to max the negative entropy (max{-H})
-        self.lterm= lambda mdl: ca.sum1((-mdl.x['lambda']*np.log(mdl.x['lambda'])))
-        self.mterm= lambda mdl: ca.sum1((-mdl.x['lambda']*np.log(mdl.x['lambda'])))
+        self.lterm= lambda mdl: mdl.u[f'yaw']**2#ca.sum1((-mdl.x['lambda']*np.log(mdl.x['lambda'])))
+        self.mterm= lambda mdl: mdl.x['lambda']**2 #ca.sum1((-mdl.x['lambda']*np.log(mdl.x['lambda'])))
         self.bounds_dict= {
-            '_u': {'pos_x': {'upper': [1.0], 'lower': [-1.0]}, 'pos_y': {'upper': [1.0], 'lower': [-1.0]}, 'yaw': {'upper': [np.pi/10], 'lower': [-np.pi/10]}},
+            '_u': {'yaw': {'upper': [np.pi/180], 'lower': [-np.pi/180]}},
         }
         super().__post_init__()
 
@@ -78,7 +66,7 @@ class MainClass:
         self.state  = DroneState(trees_pos=resp["trees_poses"], model_type="continuous")
         self.state.populateModel()
         self.mpc  = DroneMpc(self.state.model)
-        self.u0= {"cmd_pose" : np.zeros((3,1), dtype=float, order='C')}
+        self.u0= {"cmd_pose" : np.deg2rad(1.0)*np.ones((1,1), dtype=float, order='C')}
         tvp_template = self.mpc.get_tvp_template()
         
         def tvp_fun(time_x):
@@ -106,6 +94,7 @@ class MainClass:
         self.state.update(self.bridge.getData())
         print(self.state.x_k.reshape(-1,1))
         if i ==0:
+            print(self.mpc.x0)
             self.mpc.x0 = self.state.x_k.reshape(-1,1)
             print('----')
             self.mpc.set_initial_guess()
