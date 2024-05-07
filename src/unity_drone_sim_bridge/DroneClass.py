@@ -1,3 +1,4 @@
+from matplotlib import pyplot as plt
 from unity_drone_sim_bridge.nn_lib.NeuralClass import NeuralClass
 from unity_drone_sim_bridge.BridgeClass import BridgeClass
 from unity_drone_sim_bridge.sensors import SENSORS
@@ -23,19 +24,24 @@ class DroneState(StateClass):
         '''
         self.gp = loadGp()
 
-        self.state_dict= {
-        '_x':   {'yaw':1, 'lambda':1},
-        '_u':   {'yaw':1},
-        '_tvp': {'hat_lambda_z':len(self.trees_pos)}, #g(X)
+        self.state_dict = {
+            '_x'    :   {'yaw':1, 'y':1, 'lambda':1, 'lambda_prev':1},
+            '_u'    :   {'yaw':1},
+        }
+
+        self.exp_dict = {
+            'H'         :   (lambda mdl: ca.sum2(mdl.x['lambda']*ca.log(mdl.x['lambda']))),
+            'H_prev'    :   (lambda mdl: ca.sum2(mdl.x['lambda_prev']*ca.log(mdl.x['lambda_prev'])))
         }
 
         self.rsh_dict = {
-            'yaw'       : (lambda mdl: mdl.u[f'yaw']),
-            'lambda'    : (lambda mdl:  g(mdl.x[f'yaw'], self.gp)), 
-                            #ca.dot(mdl.x[f'lambda'], mdl.tvp[f'hat_lambda_z'])/(mdl.x[f'lambda'].T@mdl.tvp[f'hat_lambda_z']))
+            'yaw'               :   (lambda mdl:    mdl.u['yaw']),
+            'y'                 :   (lambda mdl:    g(mdl.x['yaw'], self.gp)),
+            'lambda'            :   (lambda mdl:    bayes(mdl.x['lambda'],mdl.x['y'])),
+            'lambda_prev'       :   (lambda mdl:    mdl.x['lambda']),
         }
 
-        self.x_k    = np.array([0.0]*len(self.trees_pos)+ [0.5]*len(self.trees_pos))
+        self.x_k    = np.array([0.0]*len(self.trees_pos) + [0.5]*len(self.trees_pos) + [0.5]*len(self.trees_pos)*2 )
 
 
     def update(self, y_z):
@@ -43,20 +49,23 @@ class DroneState(StateClass):
         lambda_z = np.array([fake_nn(img_2_qi(y_z['image']))])
         print(y_z['gps'])
         self.x_k[0] = np.array([y_z['gps'][-1]])
-        self.x_k[1] =   2.0 - (np.cos(np.array([y_z['gps'][-1]])) + 1.0) #np.asarray([(self.x_k[1]*lambda_z) / ((self.x_k[1])*(lambda_z) + (1-self.x_k[1]) * (1-lambda_z))])
+        self.x_k[1] = (1 + np.cos(np.array([y_z['gps'][-1]]))/ 4 + 0.4)
+        self.x_k[3] = self.x_k[2]
+        self.x_k[2] = bayes(self.x_k[3],self.x_k[1])
 
 
 @dataclass
 class DroneMpc(MpcClass):
     def __post_init__(self):
         #entropy H = -lambda*ln(lambda) and then we want to max the negative entropy (max{-H})
-        self.lterm= lambda mdl: mdl.u[f'yaw']**2#ca.sum1((-mdl.x['lambda']*np.log(mdl.x['lambda'])))
-        self.mterm= lambda mdl: mdl.x['lambda']**2 #ca.sum1((-mdl.x['lambda']*np.log(mdl.x['lambda'])))
+        self.lterm= lambda mdl: -(mdl.aux['H'] - mdl.aux['H_prev'])
+                                #mdl.u[f'yaw']**2#ca.sum1((-mdl.x['lambda']*np.log(mdl.x['lambda'])))
+        self.mterm= lambda mdl: -(mdl.aux['H'] - mdl.aux['H_prev']) 
+                                #mdl.x['lambda']**2 #ca.sum1((-mdl.x['lambda']*np.log(mdl.x['lambda'])))
         self.bounds_dict= {
             '_u': {'yaw': {'upper': [np.pi/180], 'lower': [-np.pi/180]}},
         }
         super().__post_init__()
-
 
 
 class MainClass:
