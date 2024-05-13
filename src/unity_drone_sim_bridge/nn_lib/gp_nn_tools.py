@@ -3,174 +3,95 @@ import gpytorch
 import math
 import numpy as np
 import csv
-
-class ExactGPModel(gpytorch.models.ExactGP):
-    def __init__(self, train_x, train_y, likelihood):
-        super(ExactGPModel, self).__init__(train_x, train_y, likelihood)
-        self.mean_module = gpytorch.means.ConstantMean(batch_shape=torch.Size([1]))
-        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(batch_shape=torch.Size([1])), batch_shape=torch.Size([1]))
-
-    def forward(self, x):
-        mean_x = self.mean_module(x)
-        covar_x = self.covar_module(x)
-        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
-
-def train_gp_model(model, likelihood, train_x, train_y, training_iter=500, lr=0.25):
-    model.train()
-    likelihood.train()
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
-
-    for i in range(training_iter):
-        optimizer.zero_grad()
-        output = model(train_x)
-        loss = -mll(output, train_y)
-        loss.backward()
-        optimizer.step()
-        print('Iter %d/%d - Loss: %.3f' % (i + 1, training_iter, loss.item()))
-
-    model.eval()
-    likelihood.eval()
-
-    return model, likelihood
-
-def train():
-    # Training data: 20 points in [0,1] regularly spaced
-    train_x_mean = torch.linspace(0, 1, 20) * (2 * math.pi)
-
-    # True function is sin(2*pi*x) with Gaussian noise
-    train_y = 2 - (1 + torch.cos(train_x_mean) + torch.randn(train_x_mean.size()) * 0.1)
-
-    # Initialize likelihood and model
-    likelihood = gpytorch.likelihoods.GaussianLikelihood(batch_shape=torch.Size([1]))
-    model = ExactGPModel(train_x_mean, train_y, likelihood)
-
-    # Training settings
-    training_iter = 500
-    trained_model, trained_likelihood = train_gp_model(model, likelihood, train_x_mean, train_y, training_iter)
-
-    print("Training completed!")
-    return trained_model, trained_likelihood
-
-# Define the Cosine neural network
-class GP_NN(torch.nn.Module):
-    def __init__(self):
-        super(GP_NN, self).__init__()
-        self.trained_model, self.trained_likelihood  = train()
-
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return self.trained_likelihood(self.trained_model(input)).mean
-
-class Cos(torch.nn.Module):
-    def forward(self, input: torch.Tensor) -> torch.Tensor:
-        return torch.cos(input)
-
-def loadDatabase(numpyzer=False):
-    dataset_path = "/home/pantheon/lstm_sine_fitting/qi_csv_datasets/drone_round_sun_012_SaturationAndLuminance.csv"
-    dataset_array = np.array(list(csv.reader(open(dataset_path))), dtype=float)[:1080]
-
-    y = dataset_array #random.choice(dataset_array).reshape(-1, 1)
-    X = np.linspace(0,360, len(y)).reshape(-1, 1)
-    # Set a seed for reproducibility (optional)
-    np.random.seed(42)
-    # Define the percentage of data to include in the subset
-    subset_percentage = 0.1 # Adjust as needed
-    # Generate random indices for the subset
-    num_samples = len(X)
-    subset_size = int(subset_percentage * num_samples)
-    subset_indices = np.random.choice(num_samples, size=subset_size, replace=False)
-    # Create subsets of x and y based on the random indices
-    X_train = X[subset_indices]
-    y_train = y[subset_indices]
-    return X_train, y_train
-
-def loadSyntheticData(numpyzer=True):
-    train_x_mean = torch.linspace(0, 1, 20) * (2 * math.pi)
-    train_y = 2 - (1 + torch.cos(train_x_mean) + torch.randn(train_x_mean.size()) * math.sqrt(0.04))
-
-    test_x = torch.linspace(0, 1, 51) * (2 * math.pi)
-    test_y = 2 - (1 + torch.cos(train_x_mean) + torch.randn(train_x_mean.size()) * math.sqrt(0.04))
-
-    if numpyzer:
-        return np.asarray(train_x_mean), np.asarray(train_y),  np.asarray(test_x), np.asarray(test_y)
-    else:
-        return train_x_mean, train_y
-    
-'''
-# Usage example
-cos_model = GP_NN()
-output = cos_model(torch.tensor([0.5]))
-print("Output tensor values:", output)
-'''
-
-
 import numpy as np
 import casadi as ca
 import matplotlib.pyplot as plt
 from unity_drone_sim_bridge.gp_mpc.gp_class import GP
 
+def sigmoid(x):
+    return 1 / (1 + np.exp(-7.5 * x))
 
-def loadDatabase(subset_percentage):
+def fake_nn(x):
+    x_min = 1.100 
+    x_max = 1.290 
+    y_min = 0.50
+    y_max = 0.69
+    
+    x_range = x_max - x_min
+    half_x_range = x_range / 2
+    
+    normalized_x = (x - x_min - half_x_range) / x_range
+    normalized_y = sigmoid(normalized_x)
+    mapped_y = y_min + normalized_y * (y_max - y_min)
+    
+    return mapped_y
+
+def norm_nn(x):
+    x_min = 1.100 
+    x_max = 1.290 
+    y_min = 0.5
+    y_max = 0.69
+    
+    x_range = x_max - x_min
+    half_x_range = x_range / 2
+    
+    normalized_x = (x - min(x)) / (max(x)-min(x))
+    normalized_y = normalized_x
+    mapped_y = y_min + normalized_y * (y_max - y_min)
+    
+    return mapped_y
+
+class Cos(torch.nn.Module):
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return torch.cos(input)
+
+def loadDatabase(N=None):
     import csv
     dataset_path = "/home/pantheon/lstm_sine_fitting/qi_csv_datasets/drone_round_sun_012_SaturationAndLuminance.csv"
-    dataset_array = np.array(list(csv.reader(open(dataset_path))), dtype=float)[:1080]
+    dataset_array = fake_nn(np.roll(np.array(list(csv.reader(open(dataset_path))), dtype=float), -int(1081/4)))
 
-    y = dataset_array #random.choice(dataset_array).reshape(-1, 1)
-    X = np.linspace(0,np.pi*2, len(y)).reshape(-1, 1)
+    y = np.stack([dataset_array,dataset_array]).reshape(-1,1)
+    X = (np.linspace(-1, 1, len(y)) * (2*np.pi)).reshape(-1,1)
     # Set a seed for reproducibility (optional)
     np.random.seed(42)
-
+    if N is None: return X, y
     # Generate random indices for the subset
     num_samples = len(X)
-    subset_size = int(subset_percentage * num_samples)
+    subset_size = N
     subset_indices = np.random.choice(num_samples, size=subset_size, replace=False)
     # Create subsets of x and y based on the random indices
     X_train = X[subset_indices]
     y_train = y[subset_indices]
     return X_train, y_train
 
-def LoadCaGP(synthetic=True):
-    """ System Parameters """
-    dt = .01                    # Sampling time
-    Nx = 1                      # Number of states
-    Nu = 0                      # Number of inputs
-
+def LoadCaGP(synthetic=True, viz=True, N=40, method='ME'):
     # Limits in the training data
     ulb = []    # No inputs are used
     uub = []    # No inputs are used
 
-    N = 40          # Number of training data
+    #N : Number of training data
     N_test = 100    # Number of test data
 
-    a = True
-
     if synthetic:
-        X = (np.linspace(-1, 1, N) * (2 * np.pi)).reshape(-1,1)
-        Y = (2 - (1 + np.cos(X) + np.random.random(X.shape) * np.sqrt(0.04))).reshape(-1,1)
+        X = (np.linspace(-1, 1, N) * (2 * np.pi)).reshape(-1,1)   
+        Y = ((1 + np.cos(X) + np.random.random(X.shape) * np.sqrt(0.04))/ 10 + 0.4).reshape(-1,1) #(2 - (1 + np.cos(X) + np.random.random(X.shape) * np.sqrt(0.04))).reshape(-1,1)
 
         X_test = (np.linspace(-1, 1, N_test) * (2 * np.pi)).reshape(-1,1)
-        Y_test = (2 - (1 + np.cos(X_test) + np.random.random(X_test.shape) * np.sqrt(0.04))).reshape(-1,1)
+        Y_test = ((1 + np.cos(X_test) + np.random.random(X_test.shape) * np.sqrt(0.04))/ 10 + 0.4).reshape(-1,1) #(2 - (1 + np.cos(X_test) + np.random.random(X_test.shape) * np.sqrt(0.04))).reshape(-1,1)
         xlb = [0.0]
         xub = [2.0]
     else:
-        X,Y = loadDatabase(0.05)
-        X_test, Y_test= loadDatabase(0.5)
+        X,Y = loadDatabase(N)
+        X_test, Y_test= loadDatabase(N*2)
         xlb = [0.0]
         xub = [.5]
 
-    plt.figure()
-    ax = plt.subplot(111)
-    ax.scatter(X_test, Y_test, label='GP')
-    ax.set_ylabel('y')
-    ax.set_xlabel('x')
-    plt.legend(loc='best')
-    plt.show()
-
     """ Create GP model and optimize hyper-parameters"""
     gp = GP(X, Y, mean_func='zero', normalize=True, xlb=xlb, xub=xub, ulb=ulb,
-            uub=uub, optimizer_opts=None)
+            uub=uub, optimizer_opts=None, gp_method=method)
     gp.validate(X_test, Y_test)
-
+    print(viz)
+    if viz: plot_data(gp, X,Y,X_test, Y_test)
     return gp
 
 def plot_data(gp, X,Y,X_test, Y_test):
@@ -188,13 +109,13 @@ def plot_data(gp, X,Y,X_test, Y_test):
     x_sim[0] = x0
 
     gp.set_method('ME')         # Use Mean Equivalence as GP method
-    for i in range(Nt):
-        x_t, cov = gp.predict([i*2*np.pi/Nt], [], cov)
+    for i, x_ in zip(range(Nt),np.linspace(-1,1,Nt)):
+        x_t, cov = gp.predict([x_*2*np.pi], [], cov)
         x[i] = np.array(x_t).flatten()
 
     plt.figure()
     ax = plt.subplot(111)
-    ax.plot(np.linspace(0,1,Nt)*2*np.pi, x[:,0], 'b-', linewidth=1.0, label='GP')
+    ax.plot(np.linspace(-1,1,Nt)*2*np.pi, x[:,0], 'b-', linewidth=1.0, label='GP')
     ax.set_ylabel('y')
     ax.set_xlabel('x')
     ax.scatter(X_test, Y_test, label='dataset')
@@ -202,3 +123,4 @@ def plot_data(gp, X,Y,X_test, Y_test):
     
     plt.legend(loc='best')
     plt.show()
+

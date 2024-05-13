@@ -6,7 +6,7 @@ from casadi import *
 @dataclass
 class StateClass:
     model_type: str = field(default='continuous')
-
+    model_ca: str = field(default='MX')
     state_dict: Dict[str, List[str]] = field(default_factory=lambda: {
         #'_x': ['x1'],
         #'_u': ['u1'],
@@ -19,6 +19,10 @@ class StateClass:
         #'x1': lambda model: model.x['x1'] + model.u['u1'],
     })
     
+    exp_dict: Dict[str, callable] = field(default_factory=lambda: {
+        #'x1': lambda model: model.x['x1'] + model.u['u1'],
+    })
+    
     meas_dict: Dict[str, callable] = field(default_factory=lambda: {
         #'y1': lambda model: model.x['x1'] + model.u['u1'],
     })
@@ -26,7 +30,7 @@ class StateClass:
     model: do_mpc.model.Model = field(init=False)
     
     def __post_init__(self):
-        self.model = do_mpc.model.Model(self.model_type, 'MX')
+        self.model = do_mpc.model.Model(self.model_type, self.model_ca)
 
     def populateModel(self):
         # Assuming 'do_mpc' model creation
@@ -40,6 +44,8 @@ class StateClass:
             self.model.set_meas(var_type=meas_name, var_name=meas_val(self.model) if callable(meas_val) else meas_val)
         for state_var, rsh in self.rsh_dict.items():
             self.model.set_rhs(state_var, rsh(self.model))
+        for exp_name, exp in self.exp_dict.items():
+            self.model.set_expression(exp_name, exp(self.model))
         self.model.setup()
 
     def updateState(y_k):

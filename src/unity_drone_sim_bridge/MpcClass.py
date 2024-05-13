@@ -11,6 +11,8 @@ class MpcClass(do_mpc.controller.MPC):
     
     mterm: Callable[[Any], Any] = field(default_factory= (lambda: None))
 
+    rterm: Callable[[Any], Any] = field(default_factory= (lambda: None))
+    
     bounds_dict: Dict[str, Dict[str, Dict[str, float]]] = field(default_factory=lambda: {
         '_x': {'x1': {'upper': None, 'lower': None}},
         '_u': {'u1': {'upper': None, 'lower': None}},
@@ -21,8 +23,8 @@ class MpcClass(do_mpc.controller.MPC):
     })
 
     setup_mpc: dict = field(default_factory=lambda:{
-            'n_horizon': 20,
-            't_step': 0.1,
+            'n_horizon': 10,
+            't_step': .01,
             'n_robust': 1,
             'store_full_solution': True,
     }
@@ -33,7 +35,7 @@ class MpcClass(do_mpc.controller.MPC):
         self.set_param(**self.setup_mpc)
         print(self.mterm(self.model))
         self.set_objective(mterm=self.mterm(self.model), lterm=self.lterm(self.model))
-
+        if callable(self.rterm): self.set_rterm(self.rterm(self.model))
         for state_type, state_vars in self.bounds_dict.items():
             for state_var, bounds in state_vars.items():
                 for lu, value in bounds.items():

@@ -22,7 +22,8 @@ class GP:
                  optimizer_opts=None, hyper=None, normalize=True, multistart=1,
                  xlb=None, xub=None, ulb=None, uub=None, meta=None,
                  optimize_nummeric=True):
-        """ Initialize and optimize GP model
+        """ 
+        Initialize and optimize GP model
 
         """
 
