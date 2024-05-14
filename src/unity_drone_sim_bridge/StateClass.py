@@ -40,12 +40,12 @@ class StateClass:
             for var_name, dim_ in state_vars.items():
                 print(state_type, var_name, dim_)
                 self.model.set_variable(state_type, var_name, dim_)
+        for exp_name, exp in self.exp_dict.items(): 
+            self.model.set_expression(exp_name, exp(self.model))
         for meas_name, meas_val in self.meas_dict.items():
             self.model.set_meas(var_type=meas_name, var_name=meas_val(self.model) if callable(meas_val) else meas_val)
         for state_var, rsh in self.rsh_dict.items():
             self.model.set_rhs(state_var, rsh(self.model))
-        for exp_name, exp in self.exp_dict.items():
-            self.model.set_expression(exp_name, exp(self.model))
         self.model.setup()
 
     def updateState(y_k):
