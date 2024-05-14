@@ -94,7 +94,7 @@ class MainClass:
 
         rospy.spin()
 
-    def setUGraphics(self):
+    def setUpGraphics(self):
         import matplotlib.pyplot as plt
         import matplotlib as mpl
         # Customizing Matplotlib:
