@@ -40,5 +40,5 @@ class MpcClass(do_mpc.controller.MPC):
             for state_var, bounds in state_vars.items():
                 for lu, value in bounds.items():
                     print(lu,state_type,state_var)
-                    if value is not None: self.bounds[lu,state_type,state_var] = value
+                    if value is not None: self.bounds[lu,state_type,state_var] = value(self.model) if callable(value) else  value
 
