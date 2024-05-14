@@ -25,7 +25,7 @@ SENSORS = [
   {
     "name":  "gps",
     "type":  Pose,
-    "topic": "agent_0/pose",
+    "topic": "/agent_0/pose",
     "mode":  "sub",
     "serializer": lambda pose_msg: np.array([pose_msg.position.x, pose_msg.position.y, pose_msg.position.z,
                                           np.arctan2(2.0 * (pose_msg.orientation.w * pose_msg.orientation.z + pose_msg.orientation.x * pose_msg.orientation.y),
@@ -36,6 +36,6 @@ SENSORS = [
     "type":  Pose,
     "topic": "agent_0/cmd/pose",
     "mode":  "pub",
-    "serializer":  lambda arr: Pose(position=Point(x=0.0, y=0.0, z=0.0), orientation=Quaternion(*tf.transformations.quaternion_from_euler(0, 0, arr[0,0]))),
+    "serializer":  lambda arr: Pose(position=Point(x=arr[0,0], y=arr[1,0], z=0.0), orientation=Quaternion(*tf.transformations.quaternion_from_euler(0, 0, arr[0,0]))),
   }
 ]
