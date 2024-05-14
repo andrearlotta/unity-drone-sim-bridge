@@ -47,19 +47,26 @@ def ___trees_satisfy_conditions(drone_pos, drone_yaw, tree_pos, thresh_distance=
     return indices_np
 
 
+def drone_trees_distances_casadi(drone_pos_sym, tree_pos_sym):
+    # Calculate distance between the drone and each tree
+    return ca.sqrt(ca.sum2((tree_pos_sym - np.ones((tree_pos_sym.shape[0],1))@drone_pos_sym.T)**2))
+
 def trees_satisfy_conditions_casadi(drone_pos_sym, drone_yaw_sym, tree_pos_sym, thresh_distance=7):
     n_trees = tree_pos_sym.shape[0]
     # Calculate distance between the drone and each tree
-    distances = ca.sqrt(ca.sum2((tree_pos_sym - np.ones((n_trees,1))@drone_pos_sym.T)**2))
+    distances = drone_trees_distances_casadi(drone_pos_sym, tree_pos_sym)
     # Calculate direction from drone to each tree
     drone_dir = ca.vertcat(ca.cos(drone_yaw_sym.T), ca.sin(drone_yaw_sym.T))
-    tree_directions = tree_pos_sym - np.ones((n_trees,1))@drone_pos_sym
+    tree_directions = tree_pos_sym - np.ones((n_trees,1)) @ drone_pos_sym.T
     tree_directions_norm = tree_directions / (ca.sqrt(ca.sum2(tree_directions**2))@np.ones((1,2)))
     # Check conditions
     indices =  ca.evalf(distances < thresh_distance)
     love = (ca.sum2((np.ones((n_trees,1))@drone_dir.T) * tree_directions_norm) > 0.9)
-    return ca.logic_and(love,indices)
+    return ca.logic_and(love,indices)   #   distances < thresh_distance)
 
+def drone_trees_distances(drone_pos, tree_pos):
+    # Calculate distance between the drone and each tree
+    return np.linalg.norm(tree_pos - drone_pos, axis=1)
 
 def trees_satisfy_conditions(drone_pos, drone_yaw, tree_pos, thresh_distance=7):
     # Calculate distance between the drone and each tree
