@@ -20,9 +20,63 @@ config = tf.compat.v1.ConfigProto()
 config.gpu_options.allow_growth = True
 session = tf.compat.v1.Session(config=config)
 
+def gaussian(x, mu, sig=1/ca.sqrt(2*ca.pi), norm=True):
+    a = 1 if not norm else (sig*ca.sqrt(2*ca.pi)) 
+    return a * (
+        1.0 / (ca.sqrt(2.0 * ca.pi) * sig) * np.exp(-ca.power((x - mu) / sig, 2.0) / 2)
+    )
+
+
+def sigmoid(x, alpha=10.0):
+    return 1 / (1 + np.exp(-alpha*x))
+
+
+def sig(x, thresh = 6, delta = 0.5, alpha = 10.0):
+    x_min = thresh - delta
+    x_max = thresh + delta
+    y_min = 0.0
+    y_max = 1.0
+    
+    normalized_x = ((x - x_min) - (x_max - x_min)/2) / (x_max - x_min) 
+    normalized_y = sigmoid(normalized_x, alpha)
+    mapped_y = y_min + (normalized_y * (y_max - y_min))
+    
+    return mapped_y
+
+
 '''
 cond functions
 '''
+
+
+def trees_satisfy_conditions_np(drone_pos, drone_yaw, tree_pos, thresh_distance=5):
+    n_trees = tree_pos.shape[0]
+    # Calculate distance between the drone and each tree
+    distances = drone_trees_distances(drone_pos, tree_pos)
+    # Calculate direction from drone to each tree
+    drone_dir = np.vstack((np.cos(drone_yaw), np.sin(drone_yaw)))
+    
+    tree_directions = tree_pos - np.tile(drone_pos, (n_trees, 1))  # Correct broadcasting
+    # Calculate dot product between normalized tree direction and drone direction
+    print(tree_directions.shape)
+    print(np.linalg.norm(tree_directions, axis=1, keepdims=True).shape)
+    print((tree_directions / np.linalg.norm(tree_directions, axis=1, keepdims=True)).shape)
+    print(drone_dir.shape)
+    vect_alignment = np.sum(tree_directions / np.linalg.norm(tree_directions, axis=1, keepdims=True) * drone_dir.T, axis=1)
+    
+    return  sig(vect_alignment,  thresh=0.94, delta=0.03, alpha=2) * gaussian(distances, mu=thresh_distance, sig=1)
+    
+def trees_satisfy_conditions_casadi(drone_pos, drone_yaw, tree_pos, thresh_distance=5):
+    n_trees = tree_pos.shape[0]
+    # Define distance function
+    distance_expr = ca.sqrt((drone_pos[0] - tree_pos[:, 0])**2 + (drone_pos[1] - tree_pos[:, 1])**2)
+    drone_dir = ca.vertcat(ca.cos(drone_yaw), ca.sin(drone_yaw))
+    tree_directions = tree_pos - ca.repmat(drone_pos.T, n_trees, 1)
+    normalized_directions = tree_directions / ca.power(ca.sum2(ca.power(tree_directions,2)),(1./2))
+    # Calculate dot product
+    vect_alignment = ca.mtimes(normalized_directions, drone_dir)
+    return  sig(vect_alignment,  thresh=0.94, delta=0.03, alpha=2)* gaussian(distance_expr, mu=thresh_distance, sig=1)
+
 def ___trees_satisfy_conditions(drone_pos, drone_yaw, tree_pos, thresh_distance=7):
     # Convert inputs to CasADi symbols
     drone_pos_sym = ca.MX(drone_pos)
@@ -51,18 +105,52 @@ def drone_trees_distances_casadi(drone_pos_sym, tree_pos_sym):
     # Calculate distance between the drone and each tree
     return ca.sqrt(ca.sum2((tree_pos_sym - np.ones((tree_pos_sym.shape[0],1))@drone_pos_sym.T)**2))
 
-def trees_satisfy_conditions_casadi(drone_pos_sym, drone_yaw_sym, tree_pos_sym, thresh_distance=7):
-    n_trees = tree_pos_sym.shape[0]
-    # Calculate distance between the drone and each tree
-    distances = drone_trees_distances_casadi(drone_pos_sym, tree_pos_sym)
-    # Calculate direction from drone to each tree
-    drone_dir = ca.vertcat(ca.cos(drone_yaw_sym.T), ca.sin(drone_yaw_sym.T))
-    tree_directions = tree_pos_sym - np.ones((n_trees,1)) @ drone_pos_sym.T
-    tree_directions_norm = tree_directions / (ca.sqrt(ca.sum2(tree_directions**2))@np.ones((1,2)))
-    # Check conditions
-    indices =  ca.evalf(distances < thresh_distance)
-    love = (ca.sum2((np.ones((n_trees,1))@drone_dir.T) * tree_directions_norm) > 0.9)
-    return ca.logic_and(love,indices)   #   distances < thresh_distance)
+
+
+"""
+
+    f0 = ca.Function('f0',{x},{sin(x)});
+    f1 = ca.Function('f1',{x},{cos(x)});
+    f2 = ca.Function('f2',{x},{tan(x)});
+    f_cond = ca.Function.conditional('f_cond', {f0, f1}, f2);
+
+
+
+    # Define functions f and g
+    def f(x):
+        return x**2  # Example function
+
+    def g(x):
+        return ca.sin(x)  # Example function
+
+    # Define the conditional expression
+    y = ca.if_else(a == 0, f(x), g(x))
+
+    # Create a function for evaluation
+    F = ca.Function('F', [a, x], [y])
+"""
+
+def visual_check_if_condition_casadi(drone_pos, drone_yaw, tree_pos, thresh_distance=7):
+    n_trees = tree_pos.shape[0]
+    
+    # Define distance function
+    distance_expr = ca.sqrt((drone_pos[0] - tree_pos[:, 0])**2 + (drone_pos[1] - tree_pos[:, 1])**2)
+    
+    # Calculate drone direction vector
+    drone_dir = ca.vertcat(ca.cos(drone_yaw), ca.sin(drone_yaw))
+    
+    # Calculate tree directions
+    tree_directions = tree_pos - ca.repmat(drone_pos.T, n_trees, 1)
+    
+    # Normalize tree directions
+    normalized_directions = tree_directions / ca.sqrt(ca.sum2(ca.power(tree_directions, 2)).reshape((-1, 1)))
+    
+    # Calculate dot product
+    vect_alignment = ca.mtimes(normalized_directions, drone_dir)
+    
+    # Return logical condition
+    return ca.logic_and(vect_alignment > 0.9, distance_expr < thresh_distance)
+
 
 def drone_trees_distances(drone_pos, tree_pos):
     # Calculate distance between the drone and each tree
@@ -91,15 +179,15 @@ g functions
 
 def load_g(mode='gp', hidden_size=64, hidden_layer=5):
     if  mode == 'mlp':
-        mlp = LoadNN(hidden_size,hidden_layer)
+        mlp = LoadNN(hidden_size,hidden_layer, synthetic=False)
         print(mlp)
         return lambda x: g_nn(x, mlp)
     elif mode == 'gp':
-        gp =  LoadCaGP(synthetic=False)
+        gp =  LoadCaGP(synthetic=True)
         return lambda x: g_gp(x, gp)
 
 def g_gp(drone_yaw_sym, gp, thresh_distance=7):
-    return  np.ones(drone_yaw_sym.shape) * gp.predict(drone_yaw_sym, [], np.zeros((1,1)))[0] #np.ones(drone_yaw_sym.shape) * ca.cos(drone_yaw_sym) + 1
+    return  np.ones(drone_yaw_sym.shape) * gp.predict(drone_yaw_sym, [], np.zeros((1,1)))[0] #((1 + ca.cos(drone_yaw_sym))/ 15 + 0.5)  # np.ones(drone_yaw_sym.shape) * ca.cos(drone_yaw_sym) + 1
 
 
 def g_nn(drone_yaw_sym, nn):
@@ -116,8 +204,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-def LoadNN(hidden_size,hidden_layer,test_size=0.2):
+def LoadNN(hidden_size,hidden_layer,test_size=0.2, synthetic=False):
         EXPERIMENT_NAME = f"simple_mlp_hiddensize{hidden_size}_hiddenlayers{hidden_layer}_data{int(test_size*10)}"
+        if synthetic: EXPERIMENT_NAME += '_synthetic'
         model = l4c.naive.MultiLayerPerceptron(
         in_features = 1,
         hidden_features = hidden_size,

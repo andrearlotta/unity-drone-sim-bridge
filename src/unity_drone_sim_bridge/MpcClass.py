@@ -23,10 +23,16 @@ class MpcClass(do_mpc.controller.MPC):
     })
 
     setup_mpc: dict = field(default_factory=lambda:{
-            'n_horizon': 10,
-            't_step': .01,
-            'n_robust': 1,
+            'n_horizon': 20,
+            'n_robust': 0,
+            'open_loop': 0,
+            't_step': 1.0,
+            'state_discretization': 'collocation',
+            'collocation_type': 'radau',
+            'collocation_deg': 2,
+            'collocation_ni': 1,
             'store_full_solution': True,
+            'nlpsol_opts': {'ipopt.linear_solver': 'MA27'}
     }
     )
 
@@ -35,7 +41,7 @@ class MpcClass(do_mpc.controller.MPC):
         self.set_param(**self.setup_mpc)
         print(self.mterm(self.model))
         self.set_objective(mterm=self.mterm(self.model), lterm=self.lterm(self.model))
-        if callable(self.rterm): self.set_rterm(self.rterm(self.model))
+        if callable(self.rterm): self.set_rterm(Xrobot = np.array(3*[1e-2]))#self.rterm(self.model))
         for state_type, state_vars in self.bounds_dict.items():
             for state_var, bounds in state_vars.items():
                 for lu, value in bounds.items():

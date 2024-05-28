@@ -20,11 +20,9 @@ class SubscriberNode:
         self.global_name    = dict.get("mode") + "_node_" + dict.get("name")
         self.topic_type     = dict.get("type")
         self.data           = None
-        print((dict.get("serializer")))
         self.msg2Data       = dict.get("serializer")
 
     def __init_sub(self):
-        print(self.topic_type)
         rospy.Subscriber(self.topic_string, self.topic_type, self.callBack)
     
     def __init_ros(self):

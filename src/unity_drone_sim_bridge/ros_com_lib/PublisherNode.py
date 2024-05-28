@@ -45,7 +45,6 @@ class PublisherNode:
         self.__pubData()
 
     def __setMsg(self,data):
-        print(data)
         self.msg = self.data2Msg(data)
 
     def getMsg(self):

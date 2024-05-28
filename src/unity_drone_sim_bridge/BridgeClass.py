@@ -22,7 +22,6 @@ class BridgeClass:
     def getData(self):
         ret = {}
         for sensor, sub in self.__subscribers_dict.items():
-            print(sensor)
             while sub.getData() is None:
                 pass
             ret[sensor]= sub.getData()
@@ -30,7 +29,7 @@ class BridgeClass:
 
     def pubData(self, data_dict):
         for sensor, data in data_dict.items():
-            self._pubData(sensor, data)
+            if data is not None: self._pubData(sensor, data)
 
     def callServer(self, req_dict):
         return {server: self._callServer(server,req) for server, req in req_dict.items()}

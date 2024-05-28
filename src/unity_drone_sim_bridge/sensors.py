@@ -6,6 +6,16 @@ import numpy as np
 from unity_drone_sim_bridge.srv import GetTreesPoses
 import tf 
 bridge = CvBridge()
+# Define the lambda function to create PoseArray from list of [x, y, yaw]
+
+create_pose_array = lambda data: PoseArray(
+    poses=[
+        Pose(
+            position=Point(x=data[0, i, 0], y=data[1, i, 0], z=0),
+            orientation=Quaternion(*tf.transformations.quaternion_from_euler(0, 0, data[2, i, 0]))
+        ) for i in range(data.shape[1])
+    ]
+)
 
 SENSORS = [
   { 
@@ -25,7 +35,7 @@ SENSORS = [
   {
     "name":  "gps",
     "type":  Pose,
-    "topic": "/agent_0/pose",
+    "topic": "agent_0/pose",
     "mode":  "sub",
     "serializer": lambda pose_msg: np.array([pose_msg.position.x, pose_msg.position.y, pose_msg.position.z,
                                           np.arctan2(2.0 * (pose_msg.orientation.w * pose_msg.orientation.z + pose_msg.orientation.x * pose_msg.orientation.y),
@@ -36,6 +46,13 @@ SENSORS = [
     "type":  Pose,
     "topic": "agent_0/cmd/pose",
     "mode":  "pub",
-    "serializer":  lambda arr: Pose(position=Point(x=arr[0,0], y=arr[1,0], z=0.0), orientation=Quaternion(*tf.transformations.quaternion_from_euler(0, 0, arr[0,0]))),
+    "serializer":  lambda arr: Pose(position=Point(x=arr[0,0], y=arr[1,0], z=0.0), orientation=Quaternion(*tf.transformations.quaternion_from_euler(0, 0, arr[2,0]))),
+  },
+  { 
+    "name":  "viz_pred_pose",
+    "type":  PoseArray,
+    "topic": "viz/pred/traj",
+    "mode":  "pub",
+    "serializer":  create_pose_array,
   }
 ]

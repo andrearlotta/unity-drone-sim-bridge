@@ -74,10 +74,10 @@ def LoadCaGP(synthetic=True, viz=True, N=40, method='ME'):
 
     if synthetic:
         X = (np.linspace(-1, 1, N) * (2 * np.pi)).reshape(-1,1)   
-        Y = ((1 + np.cos(X) + np.random.random(X.shape) * np.sqrt(0.04))/ 10 + 0.4).reshape(-1,1) #(2 - (1 + np.cos(X) + np.random.random(X.shape) * np.sqrt(0.04))).reshape(-1,1)
+        Y = ((1 + np.cos(X) + np.random.random(X.shape) * np.sqrt(0.04))/ 15 + 0.5).reshape(-1,1) #(2 - (1 + np.cos(X) + np.random.random(X.shape) * np.sqrt(0.04))).reshape(-1,1)
 
         X_test = (np.linspace(-1, 1, N_test) * (2 * np.pi)).reshape(-1,1)
-        Y_test = ((1 + np.cos(X_test) + np.random.random(X_test.shape) * np.sqrt(0.04))/ 10 + 0.4).reshape(-1,1) #(2 - (1 + np.cos(X_test) + np.random.random(X_test.shape) * np.sqrt(0.04))).reshape(-1,1)
+        Y_test = ((1 + np.cos(X_test) + np.random.random(X_test.shape) * np.sqrt(0.04))/ 15 + 0.5).reshape(-1,1) #(2 - (1 + np.cos(X_test) + np.random.random(X_test.shape) * np.sqrt(0.04))).reshape(-1,1)
         xlb = [0.0]
         xub = [2.0]
     else:

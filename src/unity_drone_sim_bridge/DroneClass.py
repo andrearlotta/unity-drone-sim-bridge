@@ -16,6 +16,7 @@ from std_msgs.msg import Empty
 import numpy as np
 from do_mpc.data import save_results, load_results
 from matplotlib.animation import FuncAnimation, FFMpegWriter, ImageMagickWriter
+from unity_drone_sim_bridge.MpcPlotter import  MPCPlotter
 
 @dataclass
 class DroneState(StateClass):
