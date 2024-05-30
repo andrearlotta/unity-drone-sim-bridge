@@ -41,7 +41,7 @@ class MpcClass(do_mpc.controller.MPC):
         self.set_param(**self.setup_mpc)
         print(self.mterm(self.model))
         self.set_objective(mterm=self.mterm(self.model), lterm=self.lterm(self.model))
-        if callable(self.rterm): self.set_rterm(Xrobot = np.array(3*[1e-2]))#self.rterm(self.model))
+        if callable(self.rterm): self.set_rterm(Xrobot=np.array(3*[1e-5])) #np.array(3*[1e-2]))#
         for state_type, state_vars in self.bounds_dict.items():
             for state_var, bounds in state_vars.items():
                 for lu, value in bounds.items():

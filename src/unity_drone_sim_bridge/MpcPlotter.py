@@ -146,7 +146,21 @@ class MPCPlotter:
 
         # Save the animation as a GIF
         ani.save(filename, writer='pillow')
+        
+    def save_plot_as_mp4(self, filename='plot.mp4', interval=100, frames=None):
+        if frames is None:
+            frames = len(self.mpc.data['_x', 'Xrobot'])
 
+        # Define a function to update the plot for each frame
+        def update(frame):
+            self.plot_robot_position(frame)
+            self.plot_prediction_table(frame)
+
+        # Create animation using FuncAnimation
+        ani = FuncAnimation(self.fig, update, frames=frames, interval=interval)
+
+        # Save the animation as an MP4
+        ani.save(filename, writer='ffmpeg')
 
 import tkinter as tk
 from tkinter import ttk
@@ -204,7 +218,6 @@ def get_most_recent_file(directory, pattern):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="MPC Data Viewer")
     parser.add_argument('--file_number', type=int, help='The number of the result file to load (e.g., 060 for 060_results.pkl)')
-
     args = parser.parse_args()
     
     results_directory = 'results'
@@ -217,7 +230,10 @@ if __name__ == '__main__':
     data = load_results(file_path)
     plotter = MPCPlotter(mpc_data(data))
 
-    root = tk.Tk()
-    root.title("MPC Data Viewer")
-    mpc_gui = MPCGUI(root, plotter)
-    root.mainloop()
+    if True: 
+        plotter.save_plot_as_gif(filename='test.gif')
+    else:
+        root = tk.Tk()
+        root.title("MPC Data Viewer")
+        mpc_gui = MPCGUI(root, plotter)
+        root.mainloop()

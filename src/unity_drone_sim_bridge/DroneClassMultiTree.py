@@ -106,8 +106,6 @@ class DroneMpc(MpcClass):
         #self.scaling['_x', 'Xrobot'] = [1.0,1.0,.1]
         super().__post_init__()
 
-
-
 class MainClass:
     def __init__(self, viz=True):
         self.viz = viz

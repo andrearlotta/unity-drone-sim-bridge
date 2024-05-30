@@ -1,0 +1,19 @@
+gaussian process with costan additive kernel w/ 0.5 plateau
+
+
+L4CasADi enables the use of PyTorch models and functions in a CasADi graph while supporting CasADi code generation capabilities. The only requirement on the PyTorch model is to be traceable and differentiable
+
+gpytorch works with 2.14, but gpu is allowed with 2.12
+
+To enable the following instructions: AVX2 FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2024-04-16 17:10:55.988086: W tensorflow/compiler/tf2tensorrt/utils/py_utils.cc:38] TF-TRT Warning: Could not find TensorRT
+2.14.0
+
+Note: this notebook is not necessarily intended to teach the mathematical background of Gaussian processes, but rather how to train a simple one and make predictions in GPyTorch. For a mathematical treatment, Chapter 2 of Gaussian Processes for Machine Learning provides a very thorough introduction to GP regression (this entire text is highly recommended): http://www.gaussianprocess.org/gpml/chapters/RW2.pdf
+
+
+- create a video 
+- use gp
+
+
+stampa con 

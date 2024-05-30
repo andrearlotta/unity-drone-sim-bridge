@@ -5,7 +5,7 @@ import os
 import pickle
 
 def load_data(directory):
-    files = glob.glob(os.path.join(directory, 'GP*.pkl'))
+    files =  sorted(glob.glob(os.path.join(directory, 'MOR*.pkl')))
     print(files)
     data_list = {}
     for file in files:
@@ -33,8 +33,9 @@ def plot_metrics(data_list, metrics, method='A', save_path='plot.png'):
             plt.figure(figsize=(10, 6))
             for idx, data_values in metric_values.items():
                 plt.plot(range(len(data_values)), data_values, label=f'{metric} for test {idx}')
-            plt.xlabel('Iteration Count')
-            plt.ylabel(metric)
+            plt.xlabel('Iteration Count [#]')
+            plt.ylabel(f'{metric} [s]')
+            plt.yscale('log') 
             plt.title(f'{metric} over Iterations for Different Tests')
             plt.legend()
             plt.savefig(f'{metric}_method_A.png')
@@ -57,6 +58,7 @@ def plot_metrics(data_list, metrics, method='A', save_path='plot.png'):
             plt.fill_between(metric_dict.keys(), mean_values - std_values, mean_values + std_values, alpha=0.2, label=f'Standard Deviation {metric}')
             plt.xlabel('Iteration Count')
             plt.ylabel(metric)
+            plt.yscale('log') 
             plt.xticks(rotation=45)
             plt.title(f'Mean and Standard Deviation of {metric} over Iterations')
             plt.legend()
