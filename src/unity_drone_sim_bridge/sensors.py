@@ -1,3 +1,6 @@
+"""
+  Definition of topics to use
+"""
 from sensor_msgs.msg import *
 from std_msgs.msg import *
 from geometry_msgs.msg import *

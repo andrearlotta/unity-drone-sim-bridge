@@ -1,3 +1,6 @@
+"""
+    Wrapper of do_mpc class to write the things in a more compact way
+"""
 from dataclasses import dataclass, field
 from typing import List, Dict, Union, Callable,Any
 from casadi import *

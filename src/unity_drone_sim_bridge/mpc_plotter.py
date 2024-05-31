@@ -1,4 +1,7 @@
 
+"""
+    Process or task plotter: lambda, H, position of the robot, predictions...
+"""
 from do_mpc.data import save_results, load_results
 from matplotlib.animation import FuncAnimation, FFMpegWriter, ImageMagickWriter
 import matplotlib.pyplot as plt

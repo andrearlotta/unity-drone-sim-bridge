@@ -1,3 +1,6 @@
+"""
+    Class of dicts to populate the do_mpc model
+"""
 from dataclasses import dataclass, field
 from typing import List, Dict, Union
 import do_mpc

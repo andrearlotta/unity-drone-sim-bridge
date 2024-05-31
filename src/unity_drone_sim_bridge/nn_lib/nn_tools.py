@@ -1,3 +1,9 @@
+"""
+    Training of NN
+    Function that allows to weight the y measurement (FoV & Distance related)
+    Function that instantiates the GP or NN
+"""
+
 import numpy as np
 import tensorflow as tf
 import keras

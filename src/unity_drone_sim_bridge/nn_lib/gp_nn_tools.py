@@ -1,3 +1,6 @@
+"""
+    Train GP cassadi and plot functions
+"""
 import torch
 import gpytorch
 import math

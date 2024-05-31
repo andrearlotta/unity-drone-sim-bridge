@@ -1,5 +1,4 @@
 from matplotlib import pyplot as plt
-from unity_drone_sim_bridge.nn_lib.neural_class import NeuralClass
 from unity_drone_sim_bridge.bridge_class import BridgeClass
 from unity_drone_sim_bridge.sensors import SENSORS
 from unity_drone_sim_bridge.mpc_class import MpcClass

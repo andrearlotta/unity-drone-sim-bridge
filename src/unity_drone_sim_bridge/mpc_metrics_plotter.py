@@ -1,3 +1,6 @@
+"""
+    Metrics plotter for the MPC performance metrics (time, cost, etc.)
+"""
 import matplotlib.pyplot as plt
 import numpy as np
 import glob
