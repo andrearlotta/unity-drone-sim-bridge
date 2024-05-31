@@ -1,9 +1,9 @@
 from matplotlib import pyplot as plt
-from unity_drone_sim_bridge.nn_lib.NeuralClass import NeuralClass
-from unity_drone_sim_bridge.BridgeClass import BridgeClass
+from unity_drone_sim_bridge.nn_lib.neural_class import NeuralClass
+from unity_drone_sim_bridge.bridge_class import BridgeClass
 from unity_drone_sim_bridge.sensors import SENSORS
-from unity_drone_sim_bridge.MpcClass import MpcClass
-from unity_drone_sim_bridge.StateClass import StateClass
+from unity_drone_sim_bridge.mpc_class import MpcClass
+from unity_drone_sim_bridge.state_class import StateClass
 from unity_drone_sim_bridge.nn_lib.nn_tools import *
 from unity_drone_sim_bridge.qi_lib.qi_tools import *
 from unity_drone_sim_bridge.nn_lib.gp_nn_tools import *
@@ -15,7 +15,7 @@ import rospy
 from std_msgs.msg import Empty
 import numpy as np
 from do_mpc.data import save_results, load_results
-from unity_drone_sim_bridge.MpcPlotter import  MPCPlotter
+from unity_drone_sim_bridge.mpc_plotter import  MPCPlotter
 
 @dataclass
 class DroneState(StateClass):

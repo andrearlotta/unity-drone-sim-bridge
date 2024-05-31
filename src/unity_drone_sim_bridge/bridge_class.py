@@ -1,6 +1,6 @@
-from unity_drone_sim_bridge.ros_com_lib.PublisherNode import PublisherNode
-from unity_drone_sim_bridge.ros_com_lib.SubscriberNode import SubscriberNode
-from unity_drone_sim_bridge.ros_com_lib.ClientNode import ClientNode
+from unity_drone_sim_bridge.ros_com_lib.publisher_node import PublisherNode
+from unity_drone_sim_bridge.ros_com_lib.subscriber_node import SubscriberNode
+from unity_drone_sim_bridge.ros_com_lib.client_node import ClientNode
 import rospy
 class BridgeClass:
     def __init__(self, components_list = []):
