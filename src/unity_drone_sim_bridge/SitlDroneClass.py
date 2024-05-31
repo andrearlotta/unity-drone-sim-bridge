@@ -1,7 +1,4 @@
 from matplotlib import pyplot as plt
-from unity_drone_sim_bridge.nn_lib.NeuralClass import NeuralClass
-from unity_drone_sim_bridge.BridgeClass import BridgeClass
-from unity_drone_sim_bridge.sensors import SENSORS
 from unity_drone_sim_bridge.MpcClass import MpcClass
 from unity_drone_sim_bridge.StateClass import StateClass
 from unity_drone_sim_bridge.nn_lib.nn_tools import *
@@ -11,15 +8,63 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Union, Any, Callable
 import do_mpc
 import casadi as ca
-import rospy
 from std_msgs.msg import Empty
 import numpy as np
 from do_mpc.data import save_results, load_results
 from unity_drone_sim_bridge.MpcPlotter import MPCPlotter
 
+
+def generate_tree_positions(grid_size, spacing):
+    """Generate tree positions in a grid."""
+    x_positions = np.arange(0, grid_size[0], spacing)
+    y_positions = np.arange(0, grid_size[1], spacing)
+    xv, yv = np.meshgrid(x_positions, y_positions)
+    tree_positions = np.vstack([xv.ravel(), yv.ravel()]).T
+    return tree_positions
+
+def set_drone_position(tree_positions, min_distance):
+    """Set the drone position ensuring it is at least `min_distance` away from all trees."""
+    while True:
+        drone_pos = np.random.rand(2) * (np.max(tree_positions, axis=0) - np.min(tree_positions, axis=0)) + np.min(tree_positions, axis=0)
+        distances = np.linalg.norm(tree_positions - drone_pos, axis=1)
+        if np.all(distances >= min_distance):
+            break
+    drone_yaw = np.pi
+    return np.array([*drone_pos, drone_yaw])
+
 # Constants
 MOR_DIM_LAMBDA = 4
 MOR_DIM_OBS = 3
+TREE_SPACING = 3  # Spacing between trees in the grid
+GRID_SIZE = (100, 100)  # Grid size (number of trees along x and y)
+SPACING = 8  # Spacing between trees in meters
+MIN_DISTANCE = 1.5  # Minimum distance from drone to any tree in meters
+
+# Generate tree positions
+tree_positions = generate_tree_positions(GRID_SIZE, SPACING)
+
+# Set drone position
+drone_position = set_drone_position(tree_positions, MIN_DISTANCE)
+
+# Visualization
+plt.figure(figsize=(8, 8))
+plt.scatter(tree_positions[:, 0], tree_positions[:, 1], c='green', label='Trees')
+plt.scatter(drone_position[0], drone_position[1], c='red', label='Drone')
+plt.quiver(drone_position[0], drone_position[1], np.cos(drone_position[2]), np.sin(drone_position[2]), scale=5, color='red')
+plt.xlim([0, GRID_SIZE[0]])
+plt.ylim([0, GRID_SIZE[1]])
+plt.legend()
+plt.grid(True)
+plt.xlabel('X position (m)')
+plt.ylabel('Y position (m)')
+plt.title('Tree Positions and Drone Initial Position')
+plt.show()
+
+# Printing positions
+print("Tree Positions:")
+print(tree_positions)
+print("Drone Initial Position:")
+print(drone_position)
 
 @dataclass
 class DroneStateMor(StateClass):
@@ -28,7 +73,6 @@ class DroneStateMor(StateClass):
 
     def __post_init__(self):
         super().__post_init__()
-
         # Parameters
         self.param = {
             'tree_x': np.array(self.trees_pos[:, 0]),
@@ -59,7 +103,7 @@ class DroneStateMor(StateClass):
         self.exp_dict = {
             'H': lambda mdl: ca.sum1(mdl.x['lambda'] * ca.log(mdl.x['lambda'])) + mdl.tvp['MorH'],
             'H_prev': lambda mdl: ca.sum1(mdl.x['lambda_prev'] * ca.log(mdl.x['lambda_prev'])) + mdl.tvp['MorH_prev'],
-            'y':    (lambda mdl: g_casadi(map_g_single_casadi(self.g),mdl.tvp['MorXrobot_tree_lambda'].shape)(mdl.x['Xrobot',:2]+mdl.u['Xrobot',:2],
+            'y': (lambda mdl: g_casadi(map_g_single_casadi(self.g),mdl.tvp['MorXrobot_tree_lambda'].shape)(mdl.x['Xrobot',:2]+mdl.u['Xrobot',:2],
                                                                                                 mdl.x['Xrobot',-1]+mdl.u['Xrobot',-1],
                                                                                                 mdl.tvp['MorXrobot_tree_lambda'])) if True else \
                     (lambda mdl: 0.5 + trees_satisfy_conditions_casadi(
@@ -85,7 +129,7 @@ class DroneStateMor(StateClass):
         }
 
         # Initial state values
-        self.x_k = {key: 0.5 * np.ones(shape) if key == 'lambda_prev' else np.zeros(shape)
+        self.x_k = {key: 0.5 * np.ones(shape) if key == 'lambda_prev' or  key == 'lambda' else np.zeros(shape)
                     for key, shape in self.state_dict['_x'].items()}
         self.x_k_full = {'lambda': 0.5 * np.ones((len(self.trees_pos), 1)),
                          'lambda_prev': 0.5 * np.ones((len(self.trees_pos), 1))}
@@ -99,29 +143,24 @@ class DroneStateMor(StateClass):
         self.NoMorIdxsLambda = np.setdiff1d(np.arange(self.param['lambda'].shape[0]), self.MorIdxsLambda)
         self.MorIdxsTree = n_nearest_trees(self.x_k['Xrobot'][:2].reshape(1, -1), self.param['Xtree'], num=MOR_DIM_OBS)
 
-    def data_association(self, robot_pose, bboxes):
-        pass
-
     def update(self, y_z):
         """Update the drone state."""
         self.update_nearest_trees()
+
+        qi_z = ((1 + np.cos(y_z['gps'][-1])) / 15 + 0.5)
         
         self.x_k['Xrobot'] = np.array([y_z['gps'][0], y_z['gps'][1], y_z['gps'][-1]])
         self.x_k['Xrobot_tree'] = drone_trees_distances(self.x_k['Xrobot'][:2], self.param['Xtree'][self.MorIdxsTree])
-        
-        if 'detection' in y_z and y_z['detection']:
-            self.x_k['y'][self.data_association(self, y_z['gps'], ['gps']['detection'])] = [i['score'] for i in y_z['gps']['detection']]
-        else:
-            qi_z = ((1 + np.cos(y_z['gps'][-1])) / 15 + 0.5)
-            self.x_k['y'] = 0.5 + (qi_z - 0.5) * trees_satisfy_conditions_np(
-                drone_pos=y_z['gps'][:2], 
-                drone_yaw=y_z['gps'][-1], 
-                tree_pos=np.stack((self.param['tree_x'][self.MorIdxsLambda], self.param['tree_y'][self.MorIdxsLambda]), axis=1))
+        self.x_k['y'] = 0.5 + (qi_z - 0.5) * trees_satisfy_conditions_np(
+            drone_pos=y_z['gps'][:2], 
+            drone_yaw=y_z['gps'][-1], 
+            tree_pos=np.stack((self.param['tree_x'][self.MorIdxsLambda], self.param['tree_y'][self.MorIdxsLambda]), axis=1))
         
         self.x_k_full['lambda_prev'] = self.x_k_full['lambda']
         self.x_k_full['lambda'][self.MorIdxsLambda] = bayes(self.x_k_full['lambda_prev'][self.MorIdxsLambda], self.x_k['y'])
         self.x_k['lambda_prev'] = self.x_k['lambda']
         self.x_k['lambda'] = self.x_k_full['lambda'][self.MorIdxsLambda]
+
 @dataclass
 class DroneMpc(MpcClass):
     def __post_init__(self):
@@ -137,23 +176,43 @@ class DroneMpc(MpcClass):
 
         super().__post_init__()
 
+
+class MockBridgeClass:
+    def __init__(self):
+        self.data = {
+            "gps": np.zeros(3)
+        }
+
+    def callServer(self, request):
+        if "trees_poses" in request:
+            return {"trees_poses": np.random.rand(10, 2)}
+
+    def pubData(self, u0):
+        print(f"Published data: {u0}")
+
+    def getData(self):
+        self.data["gps"] += np.random.randn(3) * 0.1
+        return self.data
+
+# Updating MainClass to use generated tree positions and drone initial position
 class MainClass:
     def __init__(self, viz=True):
         self.viz = viz
-        self.bridge = BridgeClass(SENSORS)
-        resp = self.bridge.callServer({"trees_poses": None})["trees_poses"]
+        self.bridge = MockBridgeClass()
         
-        self.state = DroneStateMor(model_ca='MX', model_type="discrete", g=load_g('gp'), trees_pos=resp)
+        # Use generated tree positions
+        self.state = DroneStateMor(model_ca='MX', model_type="discrete", g=load_g('gp'), trees_pos=tree_positions)
         self.state.populateModel()
-        self.mpc = DroneMpc(self.state)
+        self.mpc = DroneMpc(self.state.model)
         
         self.u0 = {"cmd_pose": np.zeros((3, 1)), "viz_pred_pose": None}
         self.x_data = []
 
+        # Set initial drone position
+        self.bridge.data["gps"] = drone_position
+
         self.setUpMpc()
-        self.setUpDataSaver()
         self.runSimulation()
-        rospy.spin()
 
     def setUpMpc(self):
         """Setup the MPC with a time-varying parameter function and solver settings."""
@@ -166,8 +225,7 @@ class MainClass:
                 tvp_template['_tvp', k, 'MorH'] = np.sum(
                     self.state.param['lambda'][self.state.NoMorIdxsLambda] * np.log(self.state.param['lambda'][self.state.NoMorIdxsLambda]))
                 tvp_template['_tvp', k, 'MorH_prev'] = (
-                    tvp_template['_tvp', -1, 'MorH'] if k == 0 and time_x != 0 else tvp_template['_tvp', k, 'MorH']
-                )
+                    tvp_template['_tvp', -1, 'MorH'] if k == 0 and time_x != 0 else tvp_template['_tvp', k, 'MorH'])
             return tvp_template
 
         self.mpc.set_tvp_fun(tvp_fun)
@@ -176,30 +234,11 @@ class MainClass:
         self.mpc.setup()
         self.plotter = MPCPlotter(self.mpc)
 
-    def setUpDataSaver(self):
-        """Setup CSV writers for saving data."""
-        import csv
-        self.writer_xk = csv.writer(open('data_xk.csv', mode='w', newline=''))
-        self.writer_hk = csv.writer(open('data_Hk.csv', mode='w', newline=''))
-        self.writer_yaw = csv.writer(open('data_yaw.csv', mode='w', newline=''))
-        self.writer_y = csv.writer(open('data_y.csv', mode='w', newline=''))
-        self.writer_lambda = csv.writer(open('data_lambda.csv', mode='w', newline=''))
-
-    def saveStepDataCsv(self, i):
-        """Save step data to CSV files."""
-        self.x_data.append(self.state.x_k)
-        self.writer_xk.writerow([i, self.state.x_k])
-        self.writer_hk.writerow([i, self.mpc.data['_aux', 'H']])
-        self.writer_yaw.writerow([i, self.mpc.data.prediction(('_x', 'Xrobot')).reshape(1, -1)[0]])
-        self.writer_y.writerow([i, self.mpc.data.prediction(('_x', 'y')).reshape(1, -1)[0]])
-        self.writer_lambda.writerow([i, self.mpc.data.prediction(('_x', 'lambda')).reshape(1, -1)[0]])
-
     def runSimulation(self):
         """Run the simulation loop."""
         for i in range(50):
             print('Step:', i)
             self.loop(i)
-            self.saveStepDataCsv(i)
             if self.viz:
                 pass  # Add visualization if needed
 
@@ -219,3 +258,7 @@ class MainClass:
 
         # MPC step
         self.u0['cmd_pose'] = self.mpc.make_step(np.concatenate(list(self.state.x_k.values()), axis=None))
+
+# Run the simulation
+if __name__ == "__main__":
+    main = MainClass()

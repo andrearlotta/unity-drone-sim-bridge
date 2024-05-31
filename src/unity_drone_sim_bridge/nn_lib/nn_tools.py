@@ -65,7 +65,8 @@ def trees_satisfy_conditions_np(drone_pos, drone_yaw, tree_pos, thresh_distance=
     vect_alignment = np.sum(tree_directions / np.linalg.norm(tree_directions, axis=1, keepdims=True) * drone_dir.T, axis=1)
     
     return  sig(vect_alignment,  thresh=0.94, delta=0.03, alpha=2) * gaussian(distances, mu=thresh_distance, sig=1)
-    #return sig(vect_alignment, thresh=0.8, delta=0.5, alpha=1) * gaussian(distances, mu=thresh_distance, sig=5.0) 
+    #return sig(vect_alignment, thresh=0.8, delta=0.5, alpha=1) * gaussian(distances, mu=thresh_distance, sig=5.0)
+
 def trees_satisfy_conditions_casadi(drone_pos, drone_yaw, tree_pos, thresh_distance=5):
     n_trees = tree_pos.shape[0]
     # Define distance function
@@ -80,35 +81,23 @@ def trees_satisfy_conditions_casadi(drone_pos, drone_yaw, tree_pos, thresh_dista
     return   sig(vect_alignment,  thresh=0.94, delta=0.03, alpha=2)* gaussian(distance_expr, mu=thresh_distance, sig=1)
     #sig(vect_alignment,  thresh=0.94, delta=0.03, alpha=2)* gaussian(distance_expr, mu=thresh_distance, sig=2)
 
-def ___trees_satisfy_conditions(drone_pos, drone_yaw, tree_pos, thresh_distance=7):
-    # Convert inputs to CasADi symbols
-    drone_pos_sym = ca.MX(drone_pos)
-    drone_yaw_sym = ca.MX(drone_yaw)
-    tree_pos_sym = ca.MX(tree_pos)
-    
-    # Calculate distance between the drone and each tree
-    distances = ca.sqrt(ca.sum1((tree_pos_sym - drone_pos_sym)**2, axis=1))
-    
-    # Calculate direction from drone to each tree
-    drone_dir = ca.vertcat(ca.cos(drone_yaw_sym), ca.sin(drone_yaw_sym))
-    tree_directions = tree_pos_sym - drone_pos_sym
-    tree_directions_norm = tree_directions / ca.sqrt(ca.sum1(tree_directions**2, axis=1))
-    
-    # Check conditions 
-    indices = ca.find(ca.and1((distances < thresh_distance), 
-                              (ca.sum1(drone_dir * tree_directions_norm, axis=1) > 0.9)))
-    
-    # Convert indices to numpy array
-    indices_np = np.array(indices).flatten()
-    
-    return indices_np
-
-
 def drone_trees_distances_casadi(drone_pos_sym, tree_pos_sym):
     # Calculate distance between the drone and each tree
     return ca.sqrt(ca.sum2((tree_pos_sym - np.ones((tree_pos_sym.shape[0],1))@drone_pos_sym.T)**2))
 
+def drone_trees_distances(drone_pos, tree_pos):
+    # Calculate distance between the drone and each tree
+    return np.linalg.norm(tree_pos - drone_pos, axis=1)
 
+def n_nearest_trees(drone_pos, tree_pos, num=4):
+    # Calculate distances
+    distances = drone_trees_distances(drone_pos, tree_pos)
+    # Get indices of the 4 nearest trees
+    nearest_indices = np.argsort(distances)[:num]
+    # Get positions and distances of the 4 nearest trees
+    nearest_trees = tree_pos[nearest_indices]
+    nearest_distances = distances[nearest_indices]
+    return nearest_indices
 
 """
 
@@ -133,6 +122,53 @@ def drone_trees_distances_casadi(drone_pos_sym, tree_pos_sym):
     F = ca.Function('F', [a, x], [y])
 """
 
+def map_g_single_casadi(f):
+    drone_pos = ca.MX.sym('drone_pos', 2)
+    drone_yaw = ca.MX.sym('drone_yaw')
+    tree_pos_single = ca.MX.sym('tree_pos_single',2)
+
+    # Calculate condition for single tree
+    condition_single = trees_satisfy_conditions_casadi(drone_pos, drone_yaw, ca.reshape(tree_pos_single, (1, 2)))
+    # Apply the condition to single inputs
+    y_single = condition_single * (f(drone_pos,drone_yaw, tree_pos_single)  - 0.5) + 0.5 
+
+    # Create CasADi function for single evaluation
+    return ca.Function('F_single', [drone_pos, drone_yaw, tree_pos_single], [y_single])
+
+def g_casadi(F_single, Xtrees_dim):
+    F_mapped = F_single.map(Xtrees_dim[0]) 
+    drone_pos_sym = ca.MX.sym('drone_pos', 2)
+    drone_yaw_sym = ca.MX.sym('drone_yaw')
+    tree_lambda_sym = ca.MX.sym('tree_lambda', Xtrees_dim)
+    # Use mapped function
+    y_all = F_mapped(drone_pos_sym, drone_yaw_sym, tree_lambda_sym.T).T
+
+    return ca.Function('F_final', [drone_pos_sym, drone_yaw_sym, tree_lambda_sym], [y_all])
+
+def map_g_casadi(F_mapped, n_trees):# Create CasADi function for multiple evaluations
+    drone_pos_all = ca.MX.sym('drone_pos', 2)
+    drone_yaw_all = ca.MX.sym('drone_yaw')
+    tree_pos_all = ca.MX.sym('tree_pos', n_trees, 2)
+    x_all = ca.MX.sym('x', n_trees)
+    z_all = ca.MX.sym('z', n_trees)
+
+    # Use mapped function
+    y_all = F_mapped(drone_pos_all, drone_yaw_all, tree_pos_all.T, x_all, z_all)
+
+    return ca.Function('F_final', [drone_pos_all, drone_yaw_all, tree_pos_all, x_all, z_all], [y_all])
+
+    # Test the function
+    drone_pos_val = np.array([0, 0])
+    drone_yaw_val = 0  # Facing right (along x-axis)
+    tree_pos_val = np.array([[5, 1], [6, 6], [1, 1]])
+    x_val = 2
+    z_val = 3
+
+    # Evaluate the function
+    y_val = F(drone_pos_val, drone_yaw_val, tree_pos_val, x_val, z_val)
+    print(f'Output when condition is evaluated row-wise: {y_val}')
+
+
 def visual_check_if_condition_casadi(drone_pos, drone_yaw, tree_pos, thresh_distance=5):
     n_trees = tree_pos.shape[0]
     
@@ -154,22 +190,7 @@ def visual_check_if_condition_casadi(drone_pos, drone_yaw, tree_pos, thresh_dist
     # Return logical condition
     return ca.logic_and(vect_alignment > 0.9, distance_expr < thresh_distance)
 
-
-def drone_trees_distances(drone_pos, tree_pos):
-    # Calculate distance between the drone and each tree
-    return np.linalg.norm(tree_pos - drone_pos, axis=1)
-
-def four_nearest_trees(drone_pos, tree_pos, num=4):
-    # Calculate distances
-    distances = drone_trees_distances(drone_pos, tree_pos)
-    # Get indices of the 4 nearest trees
-    nearest_indices = np.argsort(distances)[:num]
-    # Get positions and distances of the 4 nearest trees
-    nearest_trees = tree_pos[nearest_indices]
-    nearest_distances = distances[nearest_indices]
-    return nearest_indices
-
-def trees_satisfy_conditions(drone_pos, drone_yaw, tree_pos, thresh_distance=7):
+def idx_trees_satisfy_conditions_np(drone_pos, drone_yaw, tree_pos, thresh_distance=7):
     # Calculate distance between the drone and each tree
     distances = np.linalg.norm(tree_pos - drone_pos, axis=1)
     # Calculate direction from drone to each tree
@@ -180,12 +201,6 @@ def trees_satisfy_conditions(drone_pos, drone_yaw, tree_pos, thresh_distance=7):
     indices = np.where((distances < thresh_distance) & (np.sum(drone_dir * tree_directions_norm, axis=1) > 0.9))[0]
     return indices
 
-
-def obstacle_cost(drone_pos, drone_yaw, tree_pos, thresh_distance=7):
-    # Calculate distance between the drone and each tree
-    distances = np.linalg.norm(tree_pos - drone_pos, axis=1)
-
-
 '''
 g functions
 '''
@@ -194,25 +209,27 @@ def load_g(mode='gp', hidden_size=64, hidden_layer=5):
     if  mode == 'mlp':
         mlp = LoadNN(hidden_size,hidden_layer, synthetic=False)
         print(mlp)
-        return lambda x: g_nn(x, mlp)
+        return lambda drone_pos,drone_yaw, tree_pos_single,: g_nn(drone_pos,drone_yaw, tree_pos_single, mlp)
     elif mode == 'gp':
         gp =  LoadCaGP(synthetic=True)
-        return lambda x: g_gp(x, gp)
+        return lambda drone_pos,drone_yaw, tree_pos_single: g_gp(drone_pos,drone_yaw, tree_pos_single, gp)
 
-def g_gp(drone_yaw_sym, gp, thresh_distance=7):
-    return  np.ones(drone_yaw_sym.shape) * gp.predict(drone_yaw_sym, [], np.zeros((1,1)))[0] #((1 + ca.cos(drone_yaw_sym))/ 15 + 0.5)  # np.ones(drone_yaw_sym.shape) * ca.cos(drone_yaw_sym) + 1
+def g_gp(drone_pos,drone_yaw, tree_pos_single, gp, thresh_distance=7):
+    return  ca.MX(gp.predict(drone_yaw, [], np.zeros((1,1)))[0]) #((1 + ca.cos(drone_yaw_sym))/ 15 + 0.5)  # np.ones(drone_yaw_sym.shape) * ca.cos(drone_yaw_sym) + 1
 
-
-def g_nn(drone_yaw_sym, nn):
-    return  np.ones(drone_yaw_sym.shape) * nn(drone_yaw_sym)    #cs.Function('y', [x_sym], [y_sym])
+def g_nn(drone_pos,drone_yaw, tree_pos_single, nn):
+    return nn(drone_yaw)    #cs.Function('y', [x_sym], [y_sym])
 
 '''
-nayes function
+bayes function
 '''
 
 def bayes(lambda_k,y_z):
     return ca.times(lambda_k, y_z) / (ca.times(lambda_k, y_z) + (1-lambda_k) * (1-y_z))
 
+'''
+nn module
+'''
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -369,6 +386,7 @@ def TrainNN(test_size=0.2, input_size = 1, hidden_layer=0, hidden_size = 256, ou
     model.load_state_dict(torch.load(BEST_MODEL_PATH))
     model.eval()
     print(f"Loading best model from {BEST_MODEL_PATH}")
+    
     # Test on the whole dataset and plot:
     # - Training data
     # - Training data prediction

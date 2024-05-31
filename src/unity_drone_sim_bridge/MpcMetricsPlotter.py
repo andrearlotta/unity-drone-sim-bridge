@@ -5,7 +5,7 @@ import os
 import pickle
 
 def load_data(directory):
-    files =  sorted(glob.glob(os.path.join(directory, 'MOR*.pkl')))
+    files =  sorted(glob.glob(os.path.join(directory, 'synthetic*.pkl')))
     print(files)
     data_list = {}
     for file in files:
