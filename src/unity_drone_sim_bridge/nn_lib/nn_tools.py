@@ -48,7 +48,6 @@ def sig(x, thresh = 6, delta = 0.5, alpha = 10.0):
 cond functions
 '''
 
-
 def trees_satisfy_conditions_np(drone_pos, drone_yaw, tree_pos, thresh_distance=5):
     n_trees = tree_pos.shape[0]
     # Calculate distance between the drone and each tree
@@ -63,9 +62,10 @@ def trees_satisfy_conditions_np(drone_pos, drone_yaw, tree_pos, thresh_distance=
     print((tree_directions / np.linalg.norm(tree_directions, axis=1, keepdims=True)).shape)
     print(drone_dir.shape)
     vect_alignment = np.sum(tree_directions / np.linalg.norm(tree_directions, axis=1, keepdims=True) * drone_dir.T, axis=1)
-    
-    return  sig(vect_alignment,  thresh=0.94, delta=0.03, alpha=2) * gaussian(distances, mu=thresh_distance, sig=1)
+
     #return sig(vect_alignment, thresh=0.8, delta=0.5, alpha=1) * gaussian(distances, mu=thresh_distance, sig=5.0)
+    return  sig(vect_alignment,  thresh=0.94, delta=0.03, alpha=2) * gaussian(distances, mu=thresh_distance, sig=1)
+   
 
 def trees_satisfy_conditions_casadi(drone_pos, drone_yaw, tree_pos, thresh_distance=5):
     n_trees = tree_pos.shape[0]
@@ -76,10 +76,9 @@ def trees_satisfy_conditions_casadi(drone_pos, drone_yaw, tree_pos, thresh_dista
     normalized_directions = tree_directions / ca.power(ca.sum2(ca.power(tree_directions,2)),(1./2))
     # Calculate dot product
     vect_alignment = ca.mtimes(normalized_directions, drone_dir)
-    #return  sig(vect_alignment,  thresh=0.94, delta=0.03, alpha=2)* gaussian(distance_expr, mu=thresh_distance, sig=1)
+
     #return  sig(vect_alignment, thresh=0.8, delta=0.5, alpha=1) * gaussian(distance_expr, mu=thresh_distance, sig=5.0) 
     return   sig(vect_alignment,  thresh=0.94, delta=0.03, alpha=2)* gaussian(distance_expr, mu=thresh_distance, sig=1)
-    #sig(vect_alignment,  thresh=0.94, delta=0.03, alpha=2)* gaussian(distance_expr, mu=thresh_distance, sig=2)
 
 def drone_trees_distances_casadi(drone_pos_sym, tree_pos_sym):
     # Calculate distance between the drone and each tree
@@ -90,37 +89,8 @@ def drone_trees_distances(drone_pos, tree_pos):
     return np.linalg.norm(tree_pos - drone_pos, axis=1)
 
 def n_nearest_trees(drone_pos, tree_pos, num=4):
-    # Calculate distances
-    distances = drone_trees_distances(drone_pos, tree_pos)
-    # Get indices of the 4 nearest trees
-    nearest_indices = np.argsort(distances)[:num]
-    # Get positions and distances of the 4 nearest trees
-    nearest_trees = tree_pos[nearest_indices]
-    nearest_distances = distances[nearest_indices]
-    return nearest_indices
-
-"""
-
-    f0 = ca.Function('f0',{x},{sin(x)});
-    f1 = ca.Function('f1',{x},{cos(x)});
-    f2 = ca.Function('f2',{x},{tan(x)});
-    f_cond = ca.Function.conditional('f_cond', {f0, f1}, f2);
-
-
-
-    # Define functions f and g
-    def f(x):
-        return x**2  # Example function
-
-    def g(x):
-        return ca.sin(x)  # Example function
-
-    # Define the conditional expression
-    y = ca.if_else(a == 0, f(x), g(x))
-
-    # Create a function for evaluation
-    F = ca.Function('F', [a, x], [y])
-"""
+    # Get indices of the n nearest trees
+    return np.argsort(drone_trees_distances(drone_pos, tree_pos))[:num]
 
 def map_g_single_casadi(f):
     drone_pos = ca.MX.sym('drone_pos', 2)
@@ -144,62 +114,6 @@ def g_casadi(F_single, Xtrees_dim):
     y_all = F_mapped(drone_pos_sym, drone_yaw_sym, tree_lambda_sym.T).T
 
     return ca.Function('F_final', [drone_pos_sym, drone_yaw_sym, tree_lambda_sym], [y_all])
-
-def map_g_casadi(F_mapped, n_trees):# Create CasADi function for multiple evaluations
-    drone_pos_all = ca.MX.sym('drone_pos', 2)
-    drone_yaw_all = ca.MX.sym('drone_yaw')
-    tree_pos_all = ca.MX.sym('tree_pos', n_trees, 2)
-    x_all = ca.MX.sym('x', n_trees)
-    z_all = ca.MX.sym('z', n_trees)
-
-    # Use mapped function
-    y_all = F_mapped(drone_pos_all, drone_yaw_all, tree_pos_all.T, x_all, z_all)
-
-    return ca.Function('F_final', [drone_pos_all, drone_yaw_all, tree_pos_all, x_all, z_all], [y_all])
-
-    # Test the function
-    drone_pos_val = np.array([0, 0])
-    drone_yaw_val = 0  # Facing right (along x-axis)
-    tree_pos_val = np.array([[5, 1], [6, 6], [1, 1]])
-    x_val = 2
-    z_val = 3
-
-    # Evaluate the function
-    y_val = F(drone_pos_val, drone_yaw_val, tree_pos_val, x_val, z_val)
-    print(f'Output when condition is evaluated row-wise: {y_val}')
-
-
-def visual_check_if_condition_casadi(drone_pos, drone_yaw, tree_pos, thresh_distance=5):
-    n_trees = tree_pos.shape[0]
-    
-    # Define distance function
-    distance_expr = ca.sqrt((drone_pos[0] - tree_pos[:, 0])**2 + (drone_pos[1] - tree_pos[:, 1])**2)
-    
-    # Calculate drone direction vector
-    drone_dir = ca.vertcat(ca.cos(drone_yaw), ca.sin(drone_yaw))
-    
-    # Calculate tree directions
-    tree_directions = tree_pos - ca.repmat(drone_pos.T, n_trees, 1)
-    
-    # Normalize tree directions
-    normalized_directions = tree_directions / ca.sqrt(ca.sum2(ca.power(tree_directions, 2)).reshape((-1, 1)))
-    
-    # Calculate dot product
-    vect_alignment = ca.mtimes(normalized_directions, drone_dir)
-    
-    # Return logical condition
-    return ca.logic_and(vect_alignment > 0.9, distance_expr < thresh_distance)
-
-def idx_trees_satisfy_conditions_np(drone_pos, drone_yaw, tree_pos, thresh_distance=7):
-    # Calculate distance between the drone and each tree
-    distances = np.linalg.norm(tree_pos - drone_pos, axis=1)
-    # Calculate direction from drone to each tree
-    drone_dir = np.array([np.cos(drone_yaw), np.sin(drone_yaw)])
-    tree_directions = tree_pos - drone_pos
-    tree_directions_norm = tree_directions / np.linalg.norm(tree_directions, axis=1)[:, np.newaxis]
-    # Check conditions 
-    indices = np.where((distances < thresh_distance) & (np.sum(drone_dir * tree_directions_norm, axis=1) > 0.9))[0]
-    return indices
 
 '''
 g functions
