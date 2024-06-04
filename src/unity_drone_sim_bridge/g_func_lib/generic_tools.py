@@ -67,16 +67,15 @@ def fov_weight_fun_numpy(drone_pos, drone_yaw, objects_pos, thresh_distance=5):
     vect_alignment = np.sum(drone_objects_dir / np.linalg.norm(drone_objects_dir, axis=1, keepdims=True) * drone_yaw_dir.T, axis=1)
     #return norm_sigmoid(vect_alignment, thresh=0.8, delta=0.5, alpha=1) * gaussian(distances, mu=thresh_distance, sigma=5.0)
     return  norm_sigmoid(vect_alignment,  thresh=0.94, delta=0.03, alpha=2) * gaussian(distances, mu=thresh_distance, sigma=1)
-   
 
 def fov_weight_fun_casadi(drone_pos, drone_yaw, objects_pos, thresh_distance=5):
     n_objects = objects_pos.shape[0]
     # Define distance function
     distance_expr = ca.sqrt((drone_pos[0] - objects_pos[:, 0])**2 + (drone_pos[1] - objects_pos[:, 1])**2)
-    
+    drone_yaw_dir = ca.vertcat(ca.cos(drone_yaw), ca.sin(drone_yaw))
     drone_objects_dir = objects_pos - ca.repmat(drone_pos.T, n_objects, 1)
+    
     normalized_directions = drone_objects_dir / ca.power(ca.sum2(ca.power(drone_objects_dir,2)),(1./2))
-    drone_yaw_dir = ca.vertcat(ca.cos(drone_yaw_dir), ca.sin(drone_yaw_dir))
     vect_alignment = ca.mtimes(normalized_directions, drone_yaw_dir)
 
     #return  norm_sigmoid(vect_alignment, thresh=0.8, delta=0.5, alpha=1) * gaussian(distance_expr, mu=thresh_distance, sigma=5.0) 

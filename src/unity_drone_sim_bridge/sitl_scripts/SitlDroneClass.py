@@ -125,7 +125,7 @@ class DroneStateMor(StateClass):
         self.x_k['y'] = 0.5 + (qi_z - 0.5) * fov_weight_fun_numpy(
             drone_pos=y_z['gps'][:2], 
             drone_yaw=y_z['gps'][-1], 
-            tree_pos=np.stack((self.param['tree_x'][self.MorIdxsLambda], self.param['tree_y'][self.MorIdxsLambda]), axis=1))
+            objects_pos=np.stack((self.param['tree_x'][self.MorIdxsLambda], self.param['tree_y'][self.MorIdxsLambda]), axis=1))
         
         self.x_k_full['lambda_prev'] = self.x_k_full['lambda']
         self.x_k_full['lambda'][self.MorIdxsLambda] = bayes(self.x_k_full['lambda_prev'][self.MorIdxsLambda], self.x_k['y'])
@@ -212,7 +212,7 @@ class MainClass:
 
     def runSimulation(self):
         """Run the simulation loop."""
-        for i in range(50):
+        for i in range(48):
             print('Step:', i)
             self.loop(i)
             if self.viz:

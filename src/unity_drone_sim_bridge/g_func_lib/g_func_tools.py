@@ -70,7 +70,6 @@ setup g functions tools
 def load_g(mode='gp', hidden_size=64, hidden_layer=5):
     if  mode == 'mlp':
         mlp = LoadNN(hidden_size,hidden_layer, synthetic=False)
-        print(mlp)
         return lambda drone_pos,drone_yaw, tree_pos_single,: g_nn(drone_pos,drone_yaw, tree_pos_single, mlp)
     elif mode == 'gp':
         gp =  LoadCaGP(synthetic=True)

@@ -70,13 +70,11 @@ class DroneStateMor(StateClass):
             }
         }
 
-        mapped_g = g_map_casadi_fixed_cond(setup_g_inline_casadi_fixed_cond(self.g), [self.dim_lambda, 2])
-
         # Expressions dictionary
         self.exp_dict = {
             'H': lambda mdl: ca.sum1(mdl.x['lambda'] * ca.log(mdl.x['lambda'])) + mdl.tvp['MorH'],
             'H_prev': lambda mdl: ca.sum1(mdl.x['lambda_prev'] * ca.log(mdl.x['lambda_prev'])) + mdl.tvp['MorH_prev'],
-            'y': (lambda mdl: mapped_g( mdl.x['Xrobot',:2]+mdl.u['Xrobot',:2],
+            'y': (lambda mdl: g_map_casadi_fixed_cond(setup_g_inline_casadi_fixed_cond(self.g),mdl.tvp['MorXrobot_tree_lambda'].shape)( mdl.x['Xrobot',:2]+mdl.u['Xrobot',:2],
                                         mdl.x['Xrobot',-1]+mdl.u['Xrobot',-1],
                                         mdl.tvp['MorXrobot_tree_lambda'],
                                         mdl.tvp['CondXrobot_tree_lambda'])),
@@ -121,7 +119,7 @@ class DroneStateMor(StateClass):
         self.x_k['y'] = 0.5 + (qi_z - 0.5) * fov_weight_fun_numpy(
             drone_pos=y_z['gps'][:2], 
             drone_yaw=y_z['gps'][-1], 
-            tree_pos=np.stack((self.param['tree_x'][self.MorIdxsLambda], self.param['tree_y'][self.MorIdxsLambda]), axis=1))
+            objects_pos=np.stack((self.param['tree_x'][self.MorIdxsLambda], self.param['tree_y'][self.MorIdxsLambda]), axis=1))
         
         self.x_k_full['lambda_prev'] = self.x_k_full['lambda']
         self.x_k_full['lambda'][self.MorIdxsLambda] = bayes(self.x_k_full['lambda_prev'][self.MorIdxsLambda], self.x_k['y'])

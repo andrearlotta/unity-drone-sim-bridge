@@ -1,5 +1,5 @@
 import numpy as np
-from generic_tools import fake_nn
+from unity_drone_sim_bridge.g_func_lib.generic_tools import fake_nn
 
 def loadDatabase(N=None):
     import csv
