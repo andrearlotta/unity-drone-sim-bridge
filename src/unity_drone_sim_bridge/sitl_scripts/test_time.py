@@ -1,12 +1,10 @@
 from matplotlib import pyplot as plt
-from unity_drone_sim_bridge.nn_lib.NeuralClass import NeuralClass
-from unity_drone_sim_bridge.BridgeClass import BridgeClass
-from unity_drone_sim_bridge.sensors import SENSORS
-from unity_drone_sim_bridge.MpcClass import MpcClass
-from unity_drone_sim_bridge.StateClass import StateClass
-from unity_drone_sim_bridge.nn_lib.nn_tools import *
+from unity_drone_sim_bridge.core_lib.MpcClass import MpcClass
+from unity_drone_sim_bridge.core_lib.StateClass import StateClass
+from unity_drone_sim_bridge.g_func_lib.g_func_tools import *
 from unity_drone_sim_bridge.qi_lib.qi_tools import *
-from unity_drone_sim_bridge.nn_lib.gp_nn_tools import *
+from unity_drone_sim_bridge.g_func_lib.gp_tools import *
+from unity_drone_sim_bridge.g_func_lib.nn_tools import *
 from dataclasses import dataclass, field
 import rospy
 from std_msgs.msg import Empty
@@ -18,20 +16,22 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 from typing import List, Dict, Union, Any, Callable
-import do_mpc
 
-def Test_nn():
+def Test_nn(train=False):
     hidden_layers = [1,5,10]
     layer_dims = list(2** i for i in range(6,15,3))  # List of i values
     all_diff_times = {n_layer: [] for n_layer in hidden_layers}  # Dictionary to store diff times for each method
     all_diff_times_std = {n_layer: [] for n_layer in hidden_layers}  # Dictionary to store diff times for each method
+    
     for dataset_dim in list(i*0.1 for i in range(2,8,3)):
         for n_layer in hidden_layers:
             for layer_dim in layer_dims:
-                #model = TrainNN(test_size=dataset_dim, input_size = 1, hidden_layer=n_layer, hidden_size = layer_dim, output_size = 1, learning_rate = 0.0001, num_epochs = 500, batch_size = 1)
-                #nn_ca = l4c.L4CasADi(model, model_expects_batch_dim=True, device='cpu')
-                #g = lambda x: g_nn(x, nn_ca)
-                model = LoadNN(layer_dim,n_layer,test_size=dataset_dim)
+                if train:
+                    model = TrainNN(test_size=dataset_dim, input_size = 1, hidden_layer=n_layer, hidden_size = layer_dim, output_size = 1, learning_rate = 0.0001, num_epochs = 500, batch_size = 1)
+                    nn_ca = l4c.L4CasADi(model, model_expects_batch_dim=True, device='cpu')
+                    g = lambda drone_pos,drone_yaw, tree_pos_single: g_nn(drone_pos,drone_yaw, tree_pos_single, nn_ca)
+                else: 
+                    model = LoadNN(layer_dim,n_layer,test_size=dataset_dim)
                 mpc = MainClass(model_type="continuous", model_ca='MX', g = model) # SX not working. 
                 loop_ = []
                 for i in range(1):
@@ -50,6 +50,7 @@ def Test_nn():
             writer.writerow(['i']+ hidden_layers)
             for i, diffs in zip(layer_dims, zip(*[all_diff_times_std[method] for method in hidden_layers])):
                 writer.writerow([i] + list(diffs))
+
     ## Plotting
     #for n_layer in hidden_layers:
     #    plt.plot(layer_dims, all_diff_times[n_layer], label=n_layer)

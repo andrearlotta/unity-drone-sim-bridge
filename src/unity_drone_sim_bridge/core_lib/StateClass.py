@@ -38,7 +38,6 @@ class StateClass:
         # Iteratively populate the model using the elements from state_dict
         for state_type, state_vars in self.state_dict.items():
             for var_name, dim_ in state_vars.items():
-                print(state_type, var_name, dim_)
                 self.model.set_variable(state_type, var_name, dim_)
         for exp_name, exp in self.exp_dict.items(): 
             self.model.set_expression(exp_name, exp(self.model))

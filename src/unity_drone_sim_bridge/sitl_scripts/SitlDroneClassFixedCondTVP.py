@@ -1,40 +1,20 @@
-from matplotlib import pyplot as plt
-from unity_drone_sim_bridge.MpcClass import MpcClass
-from unity_drone_sim_bridge.StateClass import StateClass
-from unity_drone_sim_bridge.nn_lib.nn_tools import *
-from unity_drone_sim_bridge.qi_lib.qi_tools import *
-from unity_drone_sim_bridge.nn_lib.gp_nn_tools import *
 from dataclasses import dataclass, field
-from typing import List, Dict, Union, Any, Callable
-import do_mpc
+from typing import Any, Callable
+
+import csv
+import numpy as np
 import casadi as ca
-from std_msgs.msg import Empty
-import numpy as np
-from do_mpc.data import save_results, load_results
-from unity_drone_sim_bridge.MpcPlotter import MPCPlotter
-import time
-import csv
-import matplotlib.pyplot as plt
-import numpy as np
-import csv
 
-def generate_tree_positions(grid_size, spacing):
-    """Generate tree positions in a grid."""
-    x_positions = np.arange(0, grid_size[0], spacing)
-    y_positions = np.arange(0, grid_size[1], spacing)
-    xv, yv = np.meshgrid(x_positions, y_positions)
-    tree_positions = np.vstack([xv.ravel(), yv.ravel()]).T
-    return tree_positions
+from do_mpc.data import save_results
 
-def set_drone_position(tree_positions, min_distance):
-    """Set the drone position ensuring it is at least `min_distance` away from all trees."""
-    while True:
-        drone_pos = np.random.rand(2) * (np.max(tree_positions, axis=0) - np.min(tree_positions, axis=0)) + np.min(tree_positions, axis=0)
-        distances = np.linalg.norm(tree_positions - drone_pos, axis=1)
-        if np.all(distances >= min_distance):
-            break
-    drone_yaw = np.pi
-    return np.array([4., 0.0, drone_yaw])
+from unity_drone_sim_bridge.core_lib.MpcClass import MpcClass
+from unity_drone_sim_bridge.core_lib.StateClass import StateClass
+from unity_drone_sim_bridge.g_func_lib.g_func_tools import *
+from unity_drone_sim_bridge.qi_lib.qi_tools import *
+from unity_drone_sim_bridge.g_func_lib.gp_tools import *
+from unity_drone_sim_bridge.plot_tools.MpcPlotter import MPCPlotter
+
+from unity_drone_sim_bridge.sitl_scripts.setup_fake_field import *
 
 # Constants
 MOR_DIM_LAMBDA = 4
@@ -44,31 +24,14 @@ GRID_SIZE = (100, 100)  # Grid size (number of trees along x and y)
 SPACING = 7.5  # Spacing between trees in meters
 MIN_DISTANCE = 1.5  # Minimum distance from drone to any tree in meters
 BORDER = 10 
+
 # Generate tree positions
 tree_positions = generate_tree_positions(GRID_SIZE, SPACING)
 
 # Set drone position
 drone_position = set_drone_position(tree_positions, MIN_DISTANCE)
 
-# Visualization
-plt.figure(figsize=(8, 8))
-plt.scatter(tree_positions[:, 0], tree_positions[:, 1], c='green', label='Trees')
-plt.scatter(drone_position[0], drone_position[1], c='red', label='Drone')
-plt.quiver(drone_position[0], drone_position[1], np.cos(drone_position[2]), np.sin(drone_position[2]), scale=5, color='red')
-plt.xlim([-BORDER, GRID_SIZE[0] + BORDER])
-plt.ylim([-BORDER, GRID_SIZE[1] + BORDER])
-plt.legend()
-plt.grid(True)
-plt.xlabel('X position (m)')
-plt.ylabel('Y position (m)')
-plt.title('Tree Positions and Drone Initial Position')
-plt.show()
-
-# Printing positions
-print("Tree Positions:")
-print(tree_positions)
-print("Drone Initial Position:")
-print(drone_position)
+viz_field(drone_position, tree_positions, BORDER, GRID_SIZE)
 
 @dataclass
 class DroneStateMor(StateClass):
@@ -79,6 +42,7 @@ class DroneStateMor(StateClass):
 
     def __post_init__(self):
         super().__post_init__()
+
         # Parameters
         self.param = {
             'tree_x': np.array(self.trees_pos[:, 0]),
@@ -101,25 +65,22 @@ class DroneStateMor(StateClass):
                 'MorXrobot_tree_lambda': (self.dim_lambda, 2),
                 'MorXrobot_tree_obs': (self.dim_obs, 2),
                 'MorH': 1,
-                'MorH_prev': 1
+                'MorH_prev': 1,
+                'CondXrobot_tree_lambda': self.dim_lambda
             }
         }
+
+        mapped_g = g_map_casadi_fixed_cond(setup_g_inline_casadi_fixed_cond(self.g), [self.dim_lambda, 2])
 
         # Expressions dictionary
         self.exp_dict = {
             'H': lambda mdl: ca.sum1(mdl.x['lambda'] * ca.log(mdl.x['lambda'])) + mdl.tvp['MorH'],
             'H_prev': lambda mdl: ca.sum1(mdl.x['lambda_prev'] * ca.log(mdl.x['lambda_prev'])) + mdl.tvp['MorH_prev'],
-            'y': (lambda mdl: g_casadi(map_g_single_casadi(self.g),mdl.tvp['MorXrobot_tree_lambda'].shape)(mdl.x['Xrobot',:2]+mdl.u['Xrobot',:2],
-                                                                                                mdl.x['Xrobot',-1]+mdl.u['Xrobot',-1],
-                                                                                                mdl.tvp['MorXrobot_tree_lambda'])) if True else \
-                    (lambda mdl: 0.5 + trees_satisfy_conditions_casadi(
-                        mdl.x['Xrobot', :2] + mdl.u['Xrobot', :2],
-                        mdl.x['Xrobot', -1] + mdl.u['Xrobot', -1],
-                        mdl.tvp['MorXrobot_tree_lambda']) * (self.g(
-                        mdl.x['Xrobot', :2] + mdl.u['Xrobot', :2],
-                        mdl.x['Xrobot', -1] + mdl.u['Xrobot', -1],
-                        mdl.tvp['MorXrobot_tree_lambda']) - 0.5)),
-            'drone_trees_dist': lambda mdl: drone_trees_distances_casadi(
+            'y': (lambda mdl: mapped_g( mdl.x['Xrobot',:2]+mdl.u['Xrobot',:2],
+                                        mdl.x['Xrobot',-1]+mdl.u['Xrobot',-1],
+                                        mdl.tvp['MorXrobot_tree_lambda'],
+                                        mdl.tvp['CondXrobot_tree_lambda'])),
+            'drone_trees_dist': lambda mdl: drone_objects_distances_casadi(
                 mdl.x['Xrobot', :2] + mdl.u['Xrobot', :2],
                 mdl.tvp['MorXrobot_tree_obs']),
             'cost_function': lambda mdl: -(mdl.aux['H'] - mdl.aux['H_prev']),
@@ -145,9 +106,9 @@ class DroneStateMor(StateClass):
 
     def update_nearest_trees(self):
         """Update nearest tree indices."""
-        self.MorIdxsLambda = n_nearest_trees(self.x_k['Xrobot'][:2].reshape(1, -1), self.param['Xtree'], num=self.dim_lambda)
+        self.MorIdxsLambda = n_nearest_objects(self.x_k['Xrobot'][:2].reshape(1, -1), self.param['Xtree'], num=self.dim_lambda)
         self.NoMorIdxsLambda = np.setdiff1d(np.arange(self.param['lambda'].shape[0]), self.MorIdxsLambda)
-        self.MorIdxsTree = n_nearest_trees(self.x_k['Xrobot'][:2].reshape(1, -1), self.param['Xtree'], num=self.dim_obs)
+        self.MorIdxsTree = n_nearest_objects(self.x_k['Xrobot'][:2].reshape(1, -1), self.param['Xtree'], num=self.dim_obs)
 
     def update(self, y_z):
         """Update the drone state."""
@@ -156,14 +117,15 @@ class DroneStateMor(StateClass):
         qi_z = ((1 + np.cos(y_z['gps'][-1])) / 15 + 0.5)
         
         self.x_k['Xrobot'] = np.array([y_z['gps'][0], y_z['gps'][1], y_z['gps'][-1]])
-        self.x_k['Xrobot_tree'] = drone_trees_distances(self.x_k['Xrobot'][:2], self.param['Xtree'][self.MorIdxsTree])
-        self.x_k['y'] = 0.5 + (qi_z - 0.5) * trees_satisfy_conditions_np(
+        self.x_k['Xrobot_tree'] = drone_objects_distances_np(self.x_k['Xrobot'][:2], self.param['Xtree'][self.MorIdxsTree])
+        self.x_k['y'] = 0.5 + (qi_z - 0.5) * fov_weight_fun_numpy(
             drone_pos=y_z['gps'][:2], 
             drone_yaw=y_z['gps'][-1], 
             tree_pos=np.stack((self.param['tree_x'][self.MorIdxsLambda], self.param['tree_y'][self.MorIdxsLambda]), axis=1))
         
         self.x_k_full['lambda_prev'] = self.x_k_full['lambda']
         self.x_k_full['lambda'][self.MorIdxsLambda] = bayes(self.x_k_full['lambda_prev'][self.MorIdxsLambda], self.x_k['y'])
+        
         self.x_k['lambda_prev'] = self.x_k['lambda']
         self.x_k['lambda'] = self.x_k_full['lambda'][self.MorIdxsLambda]
 
@@ -205,26 +167,20 @@ class MainClass:
     def __init__(self, viz=True, g_type='gp'):
         self.viz = viz
         self.bridge = MockBridgeClass()
-        self.csv_filename = f'setup_time_{g_type}_no_cond.csv'
-        self.g= load_g(g_type)
-        
-        self.state = DroneStateMor(model_ca='MX', model_type="discrete", g=self.g, trees_pos=tree_positions)
+        self.csv_filename = f'setup_time_{g_type}_cond_fixed.csv'
+        self.g = load_g(g_type)
+        self.state = DroneStateMor(model_ca='MX', model_type="discrete", g=self.g,  trees_pos=tree_positions, dim_lambda=50)
         self.state.populateModel()
-
+        self.x_mpc_dims = [0]
         self.mpc = DroneMpc(self.state.model)
         self.setUpMpc()
-        
         self.u0 = {"cmd_pose": np.zeros((3, 1)), "viz_pred_pose": None}
-        
         self.x_data = []
-        self.setup_times = []  # List to store setup times
-        self.x_mpc_dims = []
-        self.t_wall_total_times = []  # List to store t_wall_total times
+        self.t_wall_total_times = []
         
         # Set initial drone position
         self.bridge.data["gps"] = drone_position
 
-        self.setUpMpc()
         self.runSimulation()
 
     def setUpMpc(self):
@@ -233,6 +189,7 @@ class MainClass:
 
         def tvp_fun(time_x):
             for k in range(len(tvp_template['_tvp', :, 'MorXrobot_tree_lambda'])):
+                tvp_template['_tvp', k,'CondXrobot_tree_lambda'] = np.array([1 if i in self.x_mpc_dims else 0 for i in range(self.state.dim_lambda)]) 
                 tvp_template['_tvp', k, 'MorXrobot_tree_obs'] = self.state.trees_pos[self.state.MorIdxsTree]
                 tvp_template['_tvp', k, 'MorXrobot_tree_lambda'] = self.state.trees_pos[self.state.MorIdxsLambda]
                 tvp_template['_tvp', k, 'MorH'] = np.sum(
@@ -251,16 +208,17 @@ class MainClass:
         """Run the simulation loop."""
         for i in range(50):
             print('Step:', i)
+            self.x_mpc_dims.append((i % 49))
             self.loop(i)
             if self.viz:
                 pass  # Add visualization if needed
 
         # Save the setup times and t_wall_total times to a CSV file
-        with open(self.csv_filename, 'w', newline='') as csvfile:
+        with open( self.csv_filename, 'w', newline='') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(['Iteration', 'Setup Time (s)', 't_wall_total (s)'])
-            for i, (x_mpc_dim, setup_time, t_wall_total) in enumerate(zip(self.x_mpc_dims, self.setup_times, self.t_wall_total_times)):
-                writer.writerow([x_mpc_dim, setup_time, *t_wall_total[0]])
+            for i, (x_mpc_dim, t_wall_total) in enumerate(zip(self.x_mpc_dims, self.t_wall_total_times)):
+                writer.writerow([x_mpc_dim, t_wall_total[0][0]])
 
         save_results([self.mpc])
 
@@ -272,30 +230,16 @@ class MainClass:
         # Observe and update state
         self.state.update(self.bridge.getData())
         
-        new_lambda_dim = (i % 100) + 2
-        x_k_full = self.state.x_k_full
-        start = time.time()
-        self.state = DroneStateMor(model_ca='MX', model_type="discrete", g=self.g, trees_pos=tree_positions, dim_lambda=new_lambda_dim)
-        self.state.x_k_full = x_k_full
-        self.state.update(self.bridge.getData())
-        self.state.populateModel()
-        self.mpc = DroneMpc(self.state.model)
-        self.mpc.settings.supress_ipopt_output()
-        self.setUpMpc()
-        setup_time = time.time() - start
-        self.setup_times.append(setup_time)
-        print(setup_time)
-        self.mpc.x0 = np.concatenate(list(self.state.x_k.values()), axis=None)
-        self.mpc.set_initial_guess()
+        if i == 0:
+            self.mpc.x0 = np.concatenate(list(self.state.x_k.values()), axis=None)
+            self.mpc.set_initial_guess()
 
         # MPC step
         self.u0['cmd_pose'] = self.mpc.make_step(np.concatenate(list(self.state.x_k.values()), axis=None))
 
         # Append t_wall_total data
         self.t_wall_total_times.append(self.mpc.data['t_wall_total'])
-        self.x_mpc_dims.append(len(self.state.x_k['lambda']))
-
+        
 # Run the simulation
 if __name__ == "__main__":
-    for i in ['gp', 'mlp']:
-        main = MainClass(g_type=i)
+    main = MainClass(g_type='mlp')

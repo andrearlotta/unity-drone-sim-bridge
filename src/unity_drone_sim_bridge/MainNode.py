@@ -1,12 +1,12 @@
 from matplotlib import pyplot as plt
-from unity_drone_sim_bridge.nn_lib.NeuralClass import NeuralClass
-from unity_drone_sim_bridge.BridgeClass import BridgeClass
+from unity_drone_sim_bridge.g_func_lib.nn_tools import NeuralClass
+from unity_drone_sim_bridge.core_lib.BridgeClass import BridgeClass
 from unity_drone_sim_bridge.sensors import SENSORS
-from unity_drone_sim_bridge.MpcClass import MpcClass
-from unity_drone_sim_bridge.StateClass import StateClass
-from unity_drone_sim_bridge.nn_lib.nn_tools import *
+from unity_drone_sim_bridge.core_lib.MpcClass import MpcClass
+from unity_drone_sim_bridge.core_lib.StateClass import StateClass
+from unity_drone_sim_bridge.g_func_lib.g_func_tools import *
 from unity_drone_sim_bridge.qi_lib.qi_tools import *
-from unity_drone_sim_bridge.nn_lib.gp_nn_tools import *
+from unity_drone_sim_bridge.g_func_lib.gp_tools import *
 from dataclasses import dataclass, field
 from typing import List, Dict, Union, Any, Callable
 import do_mpc
@@ -15,7 +15,7 @@ import rospy
 from std_msgs.msg import Empty
 import numpy as np
 from do_mpc.data import save_results, load_results
-from unity_drone_sim_bridge.MpcPlotter import  MPCPlotter
+from unity_drone_sim_bridge.plot_tools.MpcPlotter import  MPCPlotter
 
 @dataclass
 class DroneState(StateClass):
@@ -49,13 +49,13 @@ class DroneState(StateClass):
         self.exp_dict = {
             'H'                 :   (lambda mdl:    ca.sum1(mdl.x['lambda']*ca.log(mdl.x['lambda']))),
             'H_prev'            :   (lambda mdl:    ca.sum1(mdl.x['lambda_prev']*ca.log(mdl.x['lambda_prev']))),
-            'interoccl_check'   :   (lambda mdl:    trees_satisfy_conditions_casadi(mdl.x['Xrobot',:2],\
+            'interoccl_check'   :   (lambda mdl:    fov_weight_fun_casadi(mdl.x['Xrobot',:2],\
                                                                                     mdl.x['Xrobot',-1],\
                                                                                     ca.MX(self.trees_pos))),
-            'y'                 :   (lambda mdl:    0.5 + trees_satisfy_conditions_casadi(mdl.x['Xrobot',:2]+ mdl.u['Xrobot',:2],\
+            'y'                 :   (lambda mdl:    0.5 + fov_weight_fun_casadi(mdl.x['Xrobot',:2]+ mdl.u['Xrobot',:2],\
                                                                                           mdl.x['Xrobot',-1]+ mdl.u['Xrobot',-1], \
                                                                                           ca.MX(self.trees_pos)) * (self.g(mdl.x['Xrobot',-1] + mdl.u['Xrobot',-1]) - 0.5) ),
-            'drone_trees_dist'  :   (lambda mdl:    drone_trees_distances_casadi(mdl.x['Xrobot',:2]+ mdl.u['Xrobot',:2], ca.MX(self.trees_pos))),
+            'drone_trees_dist'  :   (lambda mdl:    drone_objects_distances_casadi(mdl.x['Xrobot',:2]+ mdl.u['Xrobot',:2], ca.MX(self.trees_pos))),
             'cost_function'     :   (lambda mdl:    - (mdl.aux['H'] - mdl.aux['H_prev'])),
         }
 
@@ -75,9 +75,9 @@ class DroneState(StateClass):
         self.x_k['Xrobot'] = np.concatenate(([y_z['gps'][0]],  
                                               [y_z['gps'][1]],
                                               [y_z['gps'][-1]]))
-        self.x_k['Xrobot_tree'] = drone_trees_distances(self.x_k['Xrobot'][:2] , self.trees_pos)
+        self.x_k['Xrobot_tree'] = drone_objects_distances_np(self.x_k['Xrobot'][:2] , self.trees_pos)
 
-        self.x_k['y'] = 0.5 + (qi_z - 0.5) * trees_satisfy_conditions_np(
+        self.x_k['y'] = 0.5 + (qi_z - 0.5) * fov_weight_fun_numpy(
                                 drone_pos=y_z['gps'][:2], 
                                 drone_yaw=y_z['gps'][-1], 
                                 tree_pos=np.stack((self.param['tree_x'],self.param['tree_y']),axis=1))
@@ -106,7 +106,7 @@ class DroneMpc(MpcClass):
         #self.scaling['_x', 'Xrobot'] = [1.0,1.0,.1]
         super().__post_init__()
 
-class MainClass:
+class MainNode:
     def __init__(self, viz=True):
         self.viz = viz
         self.bridge = BridgeClass(SENSORS)

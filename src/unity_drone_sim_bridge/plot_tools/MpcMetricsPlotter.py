@@ -35,7 +35,7 @@ def plot_metrics(data_list, metrics, method='A', save_path='plot.png'):
                 plt.plot(range(len(data_values)), data_values, label=f'{metric} for test {idx}')
             plt.xlabel('Iteration Count [#]')
             plt.ylabel(f'{metric} [s]')
-            plt.yscale('log') 
+            #plt.yscale('log') 
             plt.title(f'{metric} over Iterations for Different Tests')
             plt.legend()
             plt.savefig(f'{metric}_method_A.png')
