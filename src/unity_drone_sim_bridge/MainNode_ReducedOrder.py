@@ -55,15 +55,15 @@ class DroneStateReducedOrder(StateClass):
             }
         }
 
-        mapped_g = g_map_casadi_fixed_cond(setup_g_inline_casadi_fixed_cond(self.g), [self.dim_lambda, 2])
+        mapped_g = setup_g_inline_casadi(self.g)
 
         # Expressions dictionary
         self.exp_dict = {
             'H': lambda mdl: ca.sum1(mdl.x['lambda'] * ca.log(mdl.x['lambda'])) + mdl.tvp['ReducedOrderH'],
             'H_prev': lambda mdl: ca.sum1(mdl.x['lambda_prev'] * ca.log(mdl.x['lambda_prev'])) + mdl.tvp['ReducedOrderH_prev'],
-            'y': (lambda mdl: mapped_g(  mdl.x['Xrobot',:2]+mdl.u['Xrobot',:2],
-                                            mdl.x['Xrobot',-1]+mdl.u['Xrobot',-1],
-                                            mdl.tvp['ReducedOrderXrobot_tree_lambda'])),
+            'y': (lambda mdl: g_map_casadi(mapped_g,mdl.tvp['ReducedOrderXrobot_tree_lambda'].shape)(  mdl.x['Xrobot',:2]+mdl.u['Xrobot',:2],
+                                                                            mdl.x['Xrobot',-1]+mdl.u['Xrobot',-1],
+                                                                            mdl.tvp['ReducedOrderXrobot_tree_lambda'])),
             'drone_trees_dist': lambda mdl: drone_objects_distances_casadi(
                 mdl.x['Xrobot', :2] + mdl.u['Xrobot', :2],
                 mdl.tvp['ReducedOrderXrobot_tree_obs']),
@@ -80,7 +80,7 @@ class DroneStateReducedOrder(StateClass):
         }
 
         # Initial state values
-        self.x_k = {key: 0.5 * np.ones(shape) if key == 'lambda_prev' else np.zeros(shape)
+        self.x_k = {key: 0.5 * np.ones(shape) if 'lambda' in key else np.zeros(shape)
                     for key, shape in self.state_dict['_x'].items()}
         self.x_k_full = {'lambda': 0.5 * np.ones((len(self.trees_pos), 1)),
                          'lambda_prev': 0.5 * np.ones((len(self.trees_pos), 1))}
@@ -107,11 +107,11 @@ class DroneStateReducedOrder(StateClass):
         if 'detection' in y_z and y_z['detection']:
             self.x_k['y'][self.data_association(self, y_z['gps'], ['gps']['detection'])] = [i['score'] for i in y_z['gps']['detection']]
         else:
-            qi_z = ((1 + np.cos(y_z['gps'][-1])) / 15 + 0.5)
+            qi_z = np.array([fake_nn(img_2_qi(y_z['image']))]) # ((1 + np.cos(y_z['gps'][-1])) / 15 + 0.5)
             self.x_k['y'] = 0.5 + (qi_z - 0.5) * fov_weight_fun_numpy(
                 drone_pos=y_z['gps'][:2], 
                 drone_yaw=y_z['gps'][-1], 
-                tree_pos=np.stack((self.param['tree_x'][self.ReducedOrderIdxsLambda], self.param['tree_y'][self.ReducedOrderIdxsLambda]), axis=1))
+                objects_pos=np.stack((self.param['tree_x'][self.ReducedOrderIdxsLambda], self.param['tree_y'][self.ReducedOrderIdxsLambda]), axis=1))
         
         self.x_k_full['lambda_prev'] = self.x_k_full['lambda']
         self.x_k_full['lambda'][self.ReducedOrderIdxsLambda] = bayes(self.x_k_full['lambda_prev'][self.ReducedOrderIdxsLambda], self.x_k['y'])
@@ -142,14 +142,15 @@ class DroneMpc(MpcClass):
     Unity Bridge instatiation
 '''
 class MainNode:
-    def __init__(self, viz=True):
+    def __init__(self, viz=True, g='gp'):
         self.viz = viz
         self.bridge = BridgeClass(SENSORS)
         resp = self.bridge.callServer({"trees_poses": None})["trees_poses"]
         
-        self.state = DroneStateReducedOrder(model_ca='MX', model_type="discrete", g=load_g('gp'), trees_pos=resp)
+        self.state = DroneStateReducedOrder(model_ca='MX', model_type="discrete", g=load_g(g), trees_pos=resp)
         self.state.populateModel()
-        self.mpc = DroneMpc(self.state)
+
+        self.mpc = DroneMpc(model = self.state.model)
         
         self.u0 = {"cmd_pose": np.zeros((3, 1)), "viz_pred_pose": None}
         self.x_data = []
@@ -176,7 +177,7 @@ class MainNode:
 
         self.mpc.set_tvp_fun(tvp_fun)
         self.mpc.settings.set_linear_solver(solver_name="MA27")
-        self.mpc.settings.supress_ipopt_output()
+        #self.mpc.settings.supress_ipopt_output()
         self.mpc.setup()
 
     def setUpDataSaver(self):
@@ -199,7 +200,7 @@ class MainNode:
 
     def runSimulation(self):
         """Run the simulation loop."""
-        for i in range(50):
+        for i in range(100):
             print('Step:', i)
             self.loop(i)
             self.saveStepDataCsv(i)
@@ -210,15 +211,15 @@ class MainNode:
 
     def loop(self, i):
         """Main loop for commanding the drone and updating state."""
-        # Command
+        print('Command')
         self.bridge.pubData(self.u0)
 
-        # Observe and update state
+        print('Observe and update state')
         self.state.update(self.bridge.getData())
-        
+        print(self.state.x_k)
         if i == 0:
             self.mpc.x0 = np.concatenate(list(self.state.x_k.values()), axis=None)
             self.mpc.set_initial_guess()
 
-        # MPC step
+        print('MPC step')
         self.u0['cmd_pose'] = self.mpc.make_step(np.concatenate(list(self.state.x_k.values()), axis=None))

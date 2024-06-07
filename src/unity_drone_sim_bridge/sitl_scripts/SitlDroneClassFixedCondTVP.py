@@ -167,7 +167,7 @@ class MainClass:
         self.bridge = MockBridgeClass()
         self.csv_filename = f'setup_time_{g_type}_cond_fixed.csv'
         self.g = load_g(g_type)
-        self.state = DroneStateMor(model_ca='MX', model_type="discrete", g=self.g,  trees_pos=tree_positions, dim_lambda=50)
+        self.state = DroneStateMor(model_ca='MX', model_type="discrete", g=self.g,  trees_pos=tree_positions, dim_lambda=20)
         self.state.populateModel()
         self.x_mpc_dims = [0]
         self.mpc = DroneMpc(self.state.model)
@@ -204,9 +204,9 @@ class MainClass:
 
     def runSimulation(self):
         """Run the simulation loop."""
-        for i in range(50):
+        for i in range(20):
             print('Step:', i)
-            self.x_mpc_dims.append((i % 49))
+            self.x_mpc_dims.append((i % 20))
             self.loop(i)
             if self.viz:
                 pass  # Add visualization if needed
@@ -240,4 +240,5 @@ class MainClass:
         
 # Run the simulation
 if __name__ == "__main__":
-    main = MainClass(g_type='mlp')
+    for i in ['gp', 'mlp']:
+        main = MainClass(g_type=i)

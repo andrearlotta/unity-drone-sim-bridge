@@ -57,8 +57,9 @@ SENSORS = [
     "topic": "viz/pred/traj",
     "mode":  "pub",
     "serializer":  create_pose_array,
-  },
-  { 
+  }
+]
+"""  { 
     "name":  "yolo_detector",
     "type":  Detection2D,
     "topic": "/yolov7/detect",
@@ -71,5 +72,4 @@ SENSORS = [
                           'size_x': result.bbox.size_x if result.bbox else None,
                           'size_y': result.bbox.size_y if result.bbox else None
                         } for result in msg.results],  # Add the callback function here
-  }
-]
+  }"""

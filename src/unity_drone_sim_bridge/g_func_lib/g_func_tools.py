@@ -8,7 +8,7 @@ import casadi as ca
 casadi map tools
 '''
 
-def setup_g_inline_casadi(f):
+def setup_g_inline_casadi(f, cond= False):
     drone_pos = ca.MX.sym('drone_pos', 2)
     drone_yaw = ca.MX.sym('drone_yaw')
     tree_pos_single = ca.MX.sym('tree_pos_single',2)
@@ -20,7 +20,7 @@ def setup_g_inline_casadi(f):
     cond_y_single = ca.if_else(condition_single, y_single, 0.5)
 
     # Create CasADi function for single evaluation
-    return ca.Function('F_single', [drone_pos, drone_yaw, tree_pos_single], [y_single])
+    return ca.Function('F_single', [drone_pos, drone_yaw, tree_pos_single], [cond_y_single if cond else y_single])
 
 def g_map_casadi(F_single, Xtrees_dim):
     F_mapped = F_single.map(Xtrees_dim[0]) 
@@ -50,7 +50,7 @@ def setup_g_inline_casadi_fixed_cond(f):
     cond_y_single = ca.if_else(var_cond_single, y_single, 0.5)
 
     # Create CasADi function for single evaluation
-    return ca.Function('F_single', [drone_pos, drone_yaw, tree_pos_single, var_cond_single], [cond_y_single])
+    return ca.Function('F_single', [drone_pos, drone_yaw, tree_pos_single, var_cond_single], [y_single])
 
 def g_map_casadi_fixed_cond(F_single, Xtrees_dim, cond_=None):
     F_mapped = F_single.map(Xtrees_dim[0]) 

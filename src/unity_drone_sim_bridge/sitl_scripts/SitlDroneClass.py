@@ -38,6 +38,7 @@ viz_field(drone_position, tree_positions, BORDER, GRID_SIZE)
 @dataclass
 class DroneStateMor(StateClass):
     g: Callable[[Any], Any] = field(default=(lambda: None))
+    cond: bool = field(default=False)
     trees_pos: np.ndarray = field(default_factory=lambda: np.zeros(1))
     dim_lambda : int = field(default=MOR_DIM_LAMBDA)
     dim_obs : int = field(default=MOR_DIM_OBS)
@@ -74,7 +75,7 @@ class DroneStateMor(StateClass):
         self.exp_dict = {
             'H': lambda mdl: ca.sum1(mdl.x['lambda'] * ca.log(mdl.x['lambda'])) + mdl.tvp['MorH'],
             'H_prev': lambda mdl: ca.sum1(mdl.x['lambda_prev'] * ca.log(mdl.x['lambda_prev'])) + mdl.tvp['MorH_prev'],
-            'y': (lambda mdl: g_map_casadi(setup_g_inline_casadi(self.g),mdl.tvp['MorXrobot_tree_lambda'].shape)(mdl.x['Xrobot',:2]+mdl.u['Xrobot',:2],
+            'y': (lambda mdl: g_map_casadi(setup_g_inline_casadi(self.g, cond=self.cond),mdl.tvp['MorXrobot_tree_lambda'].shape)(mdl.x['Xrobot',:2]+mdl.u['Xrobot',:2],
                                                                                                 mdl.x['Xrobot',-1]+mdl.u['Xrobot',-1],
                                                                                                 mdl.tvp['MorXrobot_tree_lambda'])) if True else \
                     (lambda mdl: 0.5 + fov_weight_fun_casadi(
@@ -119,7 +120,6 @@ class DroneStateMor(StateClass):
         self.update_nearest_trees()
 
         qi_z = ((1 + np.cos(y_z['gps'][-1])) / 15 + 0.5)
-        
         self.x_k['Xrobot'] = np.array([y_z['gps'][0], y_z['gps'][1], y_z['gps'][-1]])
         self.x_k['Xrobot_tree'] = drone_objects_distances_np(self.x_k['Xrobot'][:2], self.param['Xtree'][self.MorIdxsTree])
         self.x_k['y'] = 0.5 + (qi_z - 0.5) * fov_weight_fun_numpy(
@@ -131,7 +131,6 @@ class DroneStateMor(StateClass):
         self.x_k_full['lambda'][self.MorIdxsLambda] = bayes(self.x_k_full['lambda_prev'][self.MorIdxsLambda], self.x_k['y'])
         self.x_k['lambda_prev'] = self.x_k['lambda']
         self.x_k['lambda'] = self.x_k_full['lambda'][self.MorIdxsLambda]
-
 
 @dataclass
 class DroneMpc(MpcClass):
@@ -152,7 +151,7 @@ class DroneMpc(MpcClass):
 class MockBridgeClass:
     def __init__(self):
         self.data = {
-            "gps": np.zeros(3)
+            "gps": drone_position
         }
 
     def callServer(self, request):
@@ -163,33 +162,32 @@ class MockBridgeClass:
         print(f"Published data: {u0}")
 
     def getData(self):
-        self.data["gps"] += np.random.randn(3) * 0.0
+        self.data["gps"] += drone_position + np.random.randn(3) * 0.1
         return self.data
 
 # Updating MainClass to use generated tree positions and drone initial position
 class MainClass:
-    def __init__(self, viz=True, g_type='gp'):
+    def __init__(self, viz=True, g_type='gp', cond=False):
         self.viz = viz
         self.bridge = MockBridgeClass()
-        self.csv_filename = f'setup_time_{g_type}_no_cond.csv'
+        self.csv_filename = f'setup_time_{g_type}_{"cond" if cond else "no_cond"}.csv'
         self.g = load_g(g_type)
-        self.state = None
-        self.mpc = None
+        """Set up the MPC with a time-varying parameter function and solver settings."""
+        self.state = DroneStateMor(model_ca='MX', model_type="discrete", g=self.g, trees_pos=tree_positions, cond=cond)
+        self.state.populateModel()
+        self.mpc = DroneMpc(self.state.model)
         self.setUpMpc()
+
         self.u0 = {"cmd_pose": np.zeros((3, 1)), "viz_pred_pose": None}
         self.x_data = []
         self.setup_times = []
         self.x_mpc_dims = []
         self.t_wall_total_times = []
-
+        
         # Run simulation
         self.runSimulation()
 
     def setUpMpc(self):
-        """Set up the MPC with a time-varying parameter function and solver settings."""
-        self.state = DroneStateMor(model_ca='MX', model_type="discrete", g=self.g, trees_pos=tree_positions)
-        self.state.populateModel()
-        self.mpc = DroneMpc(self.state.model)
 
         """Setup the MPC with a time-varying parameter function and solver settings."""
         tvp_template = self.mpc.get_tvp_template()
@@ -208,11 +206,10 @@ class MainClass:
         self.mpc.settings.set_linear_solver(solver_name="MA27")
         self.mpc.settings.supress_ipopt_output()
         self.mpc.setup()
-        self.plotter = MPCPlotter(self.mpc)
 
     def runSimulation(self):
         """Run the simulation loop."""
-        for i in range(48):
+        for i in range(20):
             print('Step:', i)
             self.loop(i)
             if self.viz:
@@ -224,7 +221,7 @@ class MainClass:
             writer.writerow(['Iteration', 'Setup Time (s)', 't_wall_total (s)'])
             for i, (x_mpc_dim, setup_time, t_wall_total) in enumerate(zip(self.x_mpc_dims, self.setup_times, self.t_wall_total_times)):
                 writer.writerow([x_mpc_dim, setup_time, *t_wall_total[0]])
-
+        print(self.csv_filename)
         save_results([self.mpc])
 
     def loop(self, i):
@@ -255,14 +252,14 @@ class MainClass:
         self.state.update(self.bridge.getData())
         self.state.populateModel()
         self.mpc = DroneMpc(self.state.model)
-        self.mpc.settings.supress_ipopt_output()
+        #self.mpc.settings.supress_ipopt_output()
         self.setUpMpc()
         self.setup_times.append(time.time() - start)
-
         self.mpc.x0 = np.concatenate(list(self.state.x_k.values()), axis=None)
         self.mpc.set_initial_guess()
 
 # Run the simulation
 if __name__ == "__main__":
-    for i in ['gp', 'mlp']:
-        main = MainClass(g_type=i)
+    for i in ['mlp']:
+        for j in [False]:
+            main = MainClass(g_type=i, cond=j)

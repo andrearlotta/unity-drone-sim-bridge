@@ -45,6 +45,7 @@ class StateClass:
             self.model.set_meas(var_type=meas_name, var_name=meas_val(self.model) if callable(meas_val) else meas_val)
         for state_var, rsh in self.rsh_dict.items():
             self.model.set_rhs(state_var, rsh(self.model))
+        
         self.model.setup()
 
     def updateState(y_k):

@@ -6,8 +6,14 @@ from unity_drone_sim_bridge.g_func_lib.gp_tools import loadDatabase, loadSynthet
 import l4casadi as l4c
 import os 
 import numpy as np
+import tensorflow as tf
 
-def LoadNN(hidden_size,hidden_layer,test_size=0.2, synthetic=True):
+config = tf.compat.v1.ConfigProto()
+config.gpu_options.allow_growth = True
+session = tf.compat.v1.Session(config=config)
+
+def LoadNN(hidden_size,hidden_layer,test_size=0.2, synthetic=False):
+
         EXPERIMENT_NAME = f"simple_mlp_hiddensize{hidden_size}_hiddenlayers{hidden_layer}_data{int(test_size*10)}"
         if synthetic: EXPERIMENT_NAME += '_synthetic'
         model = l4c.naive.MultiLayerPerceptron(
