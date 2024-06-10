@@ -1,3 +1,6 @@
-from unity_drone_sim_bridge.drone_class_multi_tree_mor import MainClass
+
+from unity_drone_sim_bridge.run_simulation import run_simulation
+
 if __name__ == '__main__':
-    MainClass()
+    # Run the simulation with the default parameters
+    run_simulation(g_function='gp', simulation_steps=100)

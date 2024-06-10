@@ -233,7 +233,7 @@ if __name__ == '__main__':
     data = load_results(file_path)
     plotter = MPCPlotter(mpc_data(data))
 
-    if True: 
+    if False: 
         plotter.save_plot_as_gif(filename='test.gif')
     else:
         root = tk.Tk()

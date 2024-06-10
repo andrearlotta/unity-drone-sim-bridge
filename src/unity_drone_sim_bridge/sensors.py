@@ -8,6 +8,8 @@ from cv_bridge import CvBridge
 import numpy as np
 from unity_drone_sim_bridge.srv import GetTreesPoses
 import tf 
+import rospy
+from vision_msgs.msg import Detection2D
 bridge = CvBridge()
 # Define the lambda function to create PoseArray from list of [x, y, yaw]
 
@@ -20,6 +22,7 @@ create_pose_array = lambda data: PoseArray(
     ]
 )
 
+# Update the SENSORS dictionary with the new entry for the Detection2D message
 SENSORS = [
   { 
     "name":  "trees_poses",
@@ -59,3 +62,17 @@ SENSORS = [
     "serializer":  create_pose_array,
   }
 ]
+"""  { 
+    "name":  "yolo_detector",
+    "type":  Detection2D,
+    "topic": "/yolov7/detect",
+    "mode":  "sub",
+    "serializer": lambda msg: [{ 
+                          'id': result.id,
+                          'score': result.score,
+                          'center_x': result.bbox.center.x if result.bbox else None,
+                          'center_y': result.bbox.center.y if result.bbox else None,
+                          'size_x': result.bbox.size_x if result.bbox else None,
+                          'size_y': result.bbox.size_y if result.bbox else None
+                        } for result in msg.results],  # Add the callback function here
+  }"""
