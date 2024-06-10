@@ -37,22 +37,28 @@ def template_mpc(model, get_obs, get_lambdas, get_residual_H, silence_solver = F
     """
     mpc = do_mpc.controller.MPC(model)
 
-    mpc.settings.n_horizon =  10
-    mpc.settings.n_robust =  0
-    mpc.settings.open_loop =  0
-    mpc.settings.t_step =  1.0
-    mpc.settings.state_discretization =  'collocation'
-    mpc.settings.collocation_type =  'radau'
-    mpc.settings.collocation_deg =  2
-    mpc.settings.collocation_ni =  1
-    mpc.settings.store_full_solution =  True
+    setup_mpc = {
+        'n_horizon': 20,
+        'n_robust': 0,
+        'open_loop': 0,
+        't_step': 1.0,
+        'state_discretization': 'collocation',
+        'collocation_type': 'radau',
+        'collocation_deg': 2,
+        'collocation_ni': 1,
+        'store_full_solution': True,
+        # Use MA27 linear solver in ipopt for faster calculations:
+        'nlpsol_opts': {'ipopt.linear_solver': 'MA27'}
+    }
+
+    mpc.set_param(**setup_mpc)
 
     if silence_solver:
         mpc.settings.supress_ipopt_output()
 
 
     mterm = model.aux['cost_function']
-    lterm = -model.aux['cost_function'] # stage cost
+    lterm = model.aux['cost_function'] # stage cost
 
 
     mpc.set_objective(mterm=mterm, lterm=lterm)
