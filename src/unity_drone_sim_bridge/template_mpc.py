@@ -38,7 +38,7 @@ def template_mpc(model, get_obs, get_lambdas, get_residual_H, silence_solver = F
     mpc = do_mpc.controller.MPC(model)
 
     setup_mpc = {
-        'n_horizon': 20,
+        'n_horizon': 15,
         'n_robust': 0,
         'open_loop': 0,
         't_step': 1.0,
@@ -62,7 +62,7 @@ def template_mpc(model, get_obs, get_lambdas, get_residual_H, silence_solver = F
 
 
     mpc.set_objective(mterm=mterm, lterm=lterm)
-    mpc.set_rterm(Xrobot_set=np.array(3*[1e-5]))
+    mpc.set_rterm(Xrobot_set=np.array(3*[1e-2]))
 
 
     mpc.bounds['lower','_u','Xrobot_set'] = 2 * [-.5] + [-np.pi/40]
