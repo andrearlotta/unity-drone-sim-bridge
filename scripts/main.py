@@ -1,5 +1,5 @@
 
-from unity_drone_sim_bridge.run_simulation import run_simulation
+from unity_drone_sim_bridge.examples.reduced_order_system.main import run_simulation
 
 if __name__ == '__main__':
     # Run the simulation with the default parameters
