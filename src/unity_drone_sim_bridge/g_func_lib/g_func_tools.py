@@ -22,11 +22,11 @@ def setup_g_inline_casadi(f, cond= False):
     # Create CasADi function for single evaluation
     return ca.Function('F_single', [drone_pos, drone_yaw, tree_pos_single], [cond_y_single if cond else y_single])
 
-def g_map_casadi(F_single, Xtrees_dim):
-    F_mapped = F_single.map(Xtrees_dim[0]) 
+def g_map_casadi(F_single, x_trees_dim):
+    F_mapped = F_single.map(x_trees_dim[0]) 
     drone_pos_sym = ca.MX.sym('drone_pos', 2)
     drone_yaw_sym = ca.MX.sym('drone_yaw')
-    tree_lambda_sym = ca.MX.sym('tree_lambda', Xtrees_dim)
+    tree_lambda_sym = ca.MX.sym('tree_lambda', x_trees_dim)
     # Use mapped function
     y_all = F_mapped(drone_pos_sym, drone_yaw_sym, tree_lambda_sym.T).T
 
@@ -52,12 +52,12 @@ def setup_g_inline_casadi_fixed_cond(f):
     # Create CasADi function for single evaluation
     return ca.Function('F_single', [drone_pos, drone_yaw, tree_pos_single, var_cond_single], [y_single])
 
-def g_map_casadi_fixed_cond(F_single, Xtrees_dim, cond_=None):
-    F_mapped = F_single.map(Xtrees_dim[0]) 
+def g_map_casadi_fixed_cond(F_single, x_trees_dim, cond_=None):
+    F_mapped = F_single.map(x_trees_dim[0]) 
     drone_pos_sym = ca.MX.sym('drone_pos', 2)
     drone_yaw_sym = ca.MX.sym('drone_yaw')
-    tree_lambda_sym = ca.MX.sym('tree_lambda', Xtrees_dim)
-    cond_sym = ca.MX.sym('tree_cond', Xtrees_dim[0])
+    tree_lambda_sym = ca.MX.sym('tree_lambda', x_trees_dim)
+    cond_sym = ca.MX.sym('tree_cond', x_trees_dim[0])
     # Use mapped function
     y_all = F_mapped(drone_pos_sym, drone_yaw_sym, tree_lambda_sym.T, cond_sym).T
 

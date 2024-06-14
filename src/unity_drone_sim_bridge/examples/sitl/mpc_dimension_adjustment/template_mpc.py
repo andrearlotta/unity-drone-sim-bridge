@@ -29,7 +29,7 @@ import os
 import do_mpc
 
 
-def template_mpc(model, get_obs, get_lambdas, get_residual_H, get_cond_y silence_solver = False):
+def template_mpc(model, get_obs, get_lambdas, get_residual_H, silence_solver = False):
     """
     --------------------------------------------------------------------------
     template_mpc: tuning parameters
@@ -75,7 +75,6 @@ def template_mpc(model, get_obs, get_lambdas, get_residual_H, get_cond_y silence
 
     def tvp_fun(time_x):
         for k in range(mpc.settings.n_horizon):
-            tvp_template['_tvp', k,'conditional_y'] = get_cond_y()
             tvp_template['_tvp', k, 'nearby_trees_obs'] = get_obs()
             tvp_template['_tvp', k, 'nearby_trees_lambda'] = get_lambdas()
             tvp_template['_tvp', k, 'residual_h_prev'] = get_residual_H()
