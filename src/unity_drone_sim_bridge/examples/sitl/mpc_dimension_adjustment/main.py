@@ -5,22 +5,28 @@ from unity_drone_sim_bridge.examples.sitl.mpc_dimension_adjustment.template_simu
 import numpy as np
 from do_mpc.data import save_results
 
-INITIAL_LAMBDA_DIM = 1
+INITIAL_LAMBDA_DIM = 2
 GRID_SIZE = (100, 100)  # Grid size (number of trees along x and y)
 SPACING = 7.5  # Spacing between trees in meters
 MIN_DISTANCE = 1.5  # Minimum distance from drone to any tree in meters
 
 def run_simulation(g_function = 'gp', simulation_steps= 100):
     g = load_g(g_function)
-    model = template_model(g=g,dim_lambda = INITIAL_LAMBDA_DIM)
+    model = template_model(g=g,dim_lambda = INITIAL_LAMBDA_DIM, dim_obs = 5)
     simulator = Simulator(model,
                           dim_lambda=INITIAL_LAMBDA_DIM,
-                          grid_size=GRID_SIZE, 
+                          grid_size=GRID_SIZE,
                           spacing=SPACING, 
                           min_distance=MIN_DISTANCE)
     mpc = template_mpc(model=model, get_obs=simulator.mpc_get_obs,
                        get_lambdas=simulator.mpc_get_lambdas, 
                        get_residual_H=simulator.mpc_get_residual_H)
+    """
+    Time Metrics
+    """
+    csv_filename = f'setup_time_{g_function}_cond_fixed.csv'
+    t_wall_total_times = []
+
     """
     Run the simulation loop.
     """
@@ -31,8 +37,9 @@ def run_simulation(g_function = 'gp', simulation_steps= 100):
         """
         print('Command')
         simulator.bridge.pubData(simulator.u_k)
-        simulator.adjust_lambda(i % 20)
-        adjust_dimension(model, g, INITIAL_LAMBDA_DIM)
+        simulator.adjust_lambda(i + INITIAL_LAMBDA_DIM % 20)
+        #adjust_dimension(model, g, INITIAL_LAMBDA_DIM)
+        model = template_model(g=g,dim_lambda = i + INITIAL_LAMBDA_DIM % 20, dim_obs = 5)
         mpc = template_mpc(model=model, get_obs=simulator.mpc_get_obs,
                            get_lambdas=simulator.mpc_get_lambdas,
                            get_residual_H=simulator.mpc_get_residual_H)

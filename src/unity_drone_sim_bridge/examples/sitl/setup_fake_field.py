@@ -17,7 +17,7 @@ def set_drone_position(tree_positions, min_distance):
         if np.all(distances >= min_distance):
             break
     drone_yaw = np.pi
-    return np.array([4., 0.0, drone_yaw])
+    return np.array([4., 0.0, drone_yaw]).reshape((-1,1))
 
 def viz_field(drone_position, tree_positions, border, grid_size):
     # Visualization

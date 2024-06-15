@@ -25,12 +25,14 @@ def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
     
     # Input struct (optimization variables):
     u_x_robot = model.set_variable(var_type='_u', var_name='u_x_robot', shape=(3,1))
-
+    
     # Time-varying parameters
-    nearby_trees_lambda = model.set_variable('_tvp', 'nearby_trees_lambda', (dim_lambda, 2))
-    nearby_trees_obs = model.set_variable('_tvp', 'nearby_trees_obs', (dim_obs, 2))
     residual_h = model.set_variable('_tvp', 'residual_h', shape=(1,1))
     residual_h_prev = model.set_variable('_tvp', 'residual_h_prev', shape=(1,1))
+    nearby_trees_lambda_x = model.set_variable('_tvp', 'nearby_trees_lambda_x',  shape=(dim_lambda, 1))
+    nearby_trees_lambda_y = model.set_variable('_tvp', 'nearby_trees_lambda_y',  shape=(dim_lambda, 1))
+    nearby_trees_obs_x = model.set_variable('_tvp', 'nearby_trees_obs_x',  shape=(dim_obs, 1))
+    nearby_trees_obs_y = model.set_variable('_tvp', 'nearby_trees_obs_y',  shape=(dim_obs, 1))
 
     mapped_g = setup_g_inline_casadi(g)
 
@@ -45,7 +47,7 @@ def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
         return g_map_casadi(mapped_g, nearby_trees_lambda.shape)(
             x_robot[:2],
             x_robot[-1],
-            nearby_trees_lambda
+            hcat([nearby_trees_lambda_x,nearby_trees_lambda_y])
         )
 
     def compute_cost_function(H, H_prev):
@@ -54,10 +56,10 @@ def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
     # Define the expressions using the created functions
     H = compute_H(lambda_, residual_h)
     H_prev = compute_H_prev(lambda_prev, residual_h_prev)
-    y_expr = compute_y(x_robot + u_x_robot, nearby_trees_lambda)
+    y_expr = compute_y(x_robot + u_x_robot, hcat([nearby_trees_lambda_x,nearby_trees_lambda_y]))
     cost_function = compute_cost_function(H, H_prev)
     obstacle_expression =  drone_objects_distances_casadi(  x_robot[:2]+u_x_robot[:2],
-                                                            nearby_trees_obs,
+                                                            hcat([nearby_trees_obs_x, nearby_trees_obs_y]),
                                                             ray = ray_obs
                                                         )
 
@@ -77,6 +79,12 @@ def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
 
     return model
 
+
+"""  
+    File "/home/pantheon/mpc-drone/ros/venv/lib/python3.9/site-packages/do_mpc/model/_model.py", line 580, in set_variable
+    assert self.flags['setup'] == False, 'Cannot call .set_variable after setup.'
+    AssertionError: Cannot call .set_variable after setup.
+"""
 def adjust_dimension(model, g, dim_lambda):
     lambda_ = model.set_variable(var_type='_x', var_name='lambda', shape=(dim_lambda,1))
     lambda_prev = model.set_variable(var_type='_x', var_name='lambda_prev', shape=(dim_lambda,1))

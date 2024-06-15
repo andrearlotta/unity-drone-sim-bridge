@@ -18,7 +18,7 @@ def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
     ray_obs = 1.0
     
     # States struct (optimization variables):
-    Xrobot = model.set_variable(var_type='_x', var_name='Xrobot', shape=(3,1))
+    Xrobot = model.set_variable(var_type='_x', var_name='x_robot', shape=(3,1))
     lambda_ = model.set_variable(var_type='_x', var_name='lambda', shape=(dim_lambda,1))
     lambda_prev = model.set_variable(var_type='_x', var_name='lambda_prev', shape=(dim_lambda,1))
     y = model.set_variable(var_type='_x', var_name='y', shape=(dim_lambda,1))
@@ -68,7 +68,7 @@ def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
     model.set_expression('y', y_expr)
     model.set_expression('cost_function', cost_function)
 
-    model.set_rhs('Xrobot', Xrobot + U_Xrobot)
+    model.set_rhs('x_robot', Xrobot + U_Xrobot)
     model.set_rhs('lambda', bayes(lambda_, model.aux['y']))
     model.set_rhs('lambda_prev', lambda_)
     model.set_rhs('y', model.aux['y'])

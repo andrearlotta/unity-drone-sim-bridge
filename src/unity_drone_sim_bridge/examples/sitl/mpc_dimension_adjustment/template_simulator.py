@@ -41,6 +41,8 @@ class MockBridgeClass:
             return self.service
 
     def pubData(self, u_k):
+        print(u_k["cmd_pose"])
+        print(self.data["gps"])
         self.data["gps"] += u_k["cmd_pose"]
         print(f"Published data: {u_k}")
 
@@ -93,15 +95,24 @@ class Simulator:
         if 'detection' in y_z and y_z['detection']:
             self.x_k['y'][self.data_association(self, y_z['gps'], y_z['detection'])] = [i['score'] for i in y_z['gps']['detection']]
         else:
-            qi_z = ((1 + np.cos(y_z['gps'][-1])) / 15 + 0.5) # np.array([fake_nn(img_2_qi(y_z['image']))]) # 
+            qi_z = ((1 + np.cos(y_z['gps'][-1])) / 15 + 0.5)[0]
+            print('----')
+            print(self.x_k['y'])
+            print(self.trees_pos[self.reduced_order_lambda_idxs][:])
+            print(fov_weight_fun_numpy(
+                drone_pos=y_z['gps'][:2], 
+                drone_yaw=y_z['gps'][-1], 
+                objects_pos=self.trees_pos[self.reduced_order_lambda_idxs][:]))
+            print(qi_z)# np.array([fake_nn(img_2_qi(y_z['image']))]) # 
+            print('----')
             self.x_k['y'] = 0.5 + (qi_z - 0.5) * fov_weight_fun_numpy(
                 drone_pos=y_z['gps'][:2], 
                 drone_yaw=y_z['gps'][-1], 
-                objects_pos=self.trees_pos[self.reduced_order_lambda_idxs][:])
-        
+                objects_pos=self.trees_pos[self.reduced_order_lambda_idxs][:]).reshape((-1,1))
+        print( self.x_k['y'])
         self.x_k_full['lambda_prev'] = self.x_k_full['lambda']
         self.x_k_full['lambda'][self.reduced_order_lambda_idxs] = bayes(self.x_k_full['lambda_prev'][self.reduced_order_lambda_idxs], self.x_k['y'])
-        self.x_k['lambda_prev'] = self.x_k['lambda']
+        self.x_k['lambda_prev'] =self.x_k_full['lambda_prev'][self.reduced_order_lambda_idxs]
         self.x_k['lambda'] = self.x_k_full['lambda'][self.reduced_order_lambda_idxs]
     
     def mpc_get_obs(self):

@@ -74,11 +74,16 @@ def template_mpc(model, get_obs, get_lambdas, get_residual_H, silence_solver = F
     tvp_template = mpc.get_tvp_template()
 
     def tvp_fun(time_x):
+        obs = get_obs()
+        lambdas = get_lambdas()
+        residual_H = get_residual_H()
         for k in range(mpc.settings.n_horizon):
-            tvp_template['_tvp', k, 'nearby_trees_obs'] = get_obs()
-            tvp_template['_tvp', k, 'nearby_trees_lambda'] = get_lambdas()
-            tvp_template['_tvp', k, 'residual_h_prev'] = get_residual_H()
-            tvp_template['_tvp', k, 'residual_h'] = get_residual_H()
+            tvp_template['_tvp', k, 'nearby_trees_obs_x'] = obs[:,0]
+            tvp_template['_tvp', k, 'nearby_trees_obs_y'] = obs[:,1]
+            tvp_template['_tvp', k, 'nearby_trees_lambda_x'] = lambdas[:,0]
+            tvp_template['_tvp', k, 'nearby_trees_lambda_y'] = lambdas[:,1]
+            tvp_template['_tvp', k, 'residual_h_prev'] = residual_H
+            tvp_template['_tvp', k, 'residual_h'] = residual_H
         return tvp_template
     mpc.set_tvp_fun(tvp_fun)
 

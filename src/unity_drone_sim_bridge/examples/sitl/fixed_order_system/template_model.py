@@ -29,9 +29,9 @@ def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
     # Time-varying parameters
     nearby_trees_lambda = model.set_variable('_tvp', 'nearby_trees_lambda', (dim_lambda, 2))
     nearby_trees_obs = model.set_variable('_tvp', 'nearby_trees_obs', (dim_obs, 2))
-    residual_h = model.set_variable('_tvp', 'residual_h', shape=(1,1))
-    residual_h_prev = model.set_variable('_tvp', 'residual_h_prev', shape=(1,1))
-    conditional_y = model.set_variable('_tvp', 'conditional_y', shape=(1,1))
+    residual_h = model.set_variable('_tvp', 'residual_h', shape=1)
+    residual_h_prev = model.set_variable('_tvp', 'residual_h_prev', shape=1)
+    conditional_y = model.set_variable('_tvp', 'conditional_y', shape=1)
 
     mapped_g = setup_g_inline_casadi(g)
 

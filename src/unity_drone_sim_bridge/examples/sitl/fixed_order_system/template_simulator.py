@@ -80,15 +80,15 @@ class Simulator:
 
     def update_nearest_trees(self):
         """Update nearest tree indices."""
-        self.reduced_order_lambda_idxs = n_nearest_objects(self.x_k['Xrobot'][:2].reshape(1, -1), self.trees_pos, num=self.dim_lambda)
+        self.reduced_order_lambda_idxs = n_nearest_objects(self.x_k['x_robot'][:2].reshape(1, -1), self.trees_pos, num=self.dim_lambda)
         self.residual_lambda_idxs = np.setdiff1d(np.arange(self.trees_pos.shape[0]), self.reduced_order_lambda_idxs)
-        self.reduced_order_obs_idxs = n_nearest_objects(self.x_k['Xrobot'][:2].reshape(1, -1), self.trees_pos, num=self.dim_obs)
+        self.reduced_order_obs_idxs = n_nearest_objects(self.x_k['x_robot'][:2].reshape(1, -1), self.trees_pos, num=self.dim_obs)
 
     def update(self, y_z):
         """Update the drone state."""
         self.update_nearest_trees()
         
-        self.x_k['Xrobot'] = np.array([y_z['gps'][0], y_z['gps'][1], y_z['gps'][-1]])
+        self.x_k['x_robot'] = np.array([y_z['gps'][0], y_z['gps'][1], y_z['gps'][-1]])
 
         if 'detection' in y_z and y_z['detection']:
             self.x_k['y'][self.data_association(self, y_z['gps'], ['gps']['detection'])] = [i['score'] for i in y_z['gps']['detection']]
