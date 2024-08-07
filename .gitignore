@@ -4,3 +4,4 @@ srv/*
 build/*
 include/*
 ros/src/unity-drone-sim-bridge/src/unity_drone_sim_bridge/BridgeLaunch.py
+src/unity_drone_sim_bridge/examples/*/__pycache__/*
