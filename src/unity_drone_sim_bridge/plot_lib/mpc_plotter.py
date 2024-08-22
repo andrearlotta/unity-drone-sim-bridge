@@ -223,13 +223,13 @@ if __name__ == '__main__':
     parser.add_argument('--file_number', type=int, help='The number of the result file to load (e.g., 060 for 060_results.pkl)')
     args = parser.parse_args()
     
-    results_directory = 'results'
+    results_directory = '/home/pantheon/.ros/results'
     if args.file_number is not None:
         file_name = f'{args.file_number:03d}_results.pkl'
         file_path = os.path.join(results_directory, file_name)
     else:
         file_path = get_most_recent_file(results_directory, '*_results.pkl')
-
+    print(file_path)
     data = load_results(file_path)
     plotter = MPCPlotter(mpc_data(data))
 

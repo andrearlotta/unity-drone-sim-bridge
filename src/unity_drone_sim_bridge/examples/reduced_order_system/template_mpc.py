@@ -62,11 +62,11 @@ def template_mpc(model, get_obs, get_lambdas, get_residual_H, silence_solver = F
 
 
     mpc.set_objective(mterm=mterm, lterm=lterm)
-    mpc.set_rterm(Xrobot_set=np.array(3*[1e-2]))
+    mpc.set_rterm(x_robot_set=np.array(3*[1e-2]))
 
 
-    mpc.bounds['lower','_u','Xrobot_set'] = 2 * [-.5] + [-np.pi/40]
-    mpc.bounds['upper','_u','Xrobot_set'] = 2 * [+.5] + [+np.pi/40]
+    mpc.bounds['lower','_u','x_robot_set'] = 2 * [-.5] + [-np.pi/40]
+    mpc.bounds['upper','_u','x_robot_set'] = 2 * [+.5] + [+np.pi/40]
     
     # Avoid the obstacles:
     mpc.set_nl_cons('obstacles', -model.aux['obstacle_distance'], 0)
@@ -75,10 +75,10 @@ def template_mpc(model, get_obs, get_lambdas, get_residual_H, silence_solver = F
 
     def tvp_fun(time_x):
         for k in range(mpc.settings.n_horizon):
-            tvp_template['_tvp', k, 'ReducedOrderXrobot_tree_obs'] = get_obs()
-            tvp_template['_tvp', k, 'ReducedOrderXrobot_tree_lambda'] = get_lambdas()
-            tvp_template['_tvp', k, 'ReducedOrderH_prev'] = get_residual_H()
-            tvp_template['_tvp', k, 'ReducedOrderH'] = get_residual_H()
+            tvp_template['_tvp', k, 'reduced_order_x_robot_tree_obs'] = get_obs()
+            tvp_template['_tvp', k, 'reduced_order_x_robot_tree_lambda'] = get_lambdas()
+            tvp_template['_tvp', k, 'reduced_order_h_prev'] = get_residual_H()
+            tvp_template['_tvp', k, 'reduced_order_h'] = get_residual_H()
         return tvp_template
     mpc.set_tvp_fun(tvp_fun)
 

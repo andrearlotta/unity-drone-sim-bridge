@@ -11,7 +11,7 @@ def drone_objects_distances_casadi(drone_pos_sym, objects_pos_sym, ray=0.0):
 
 def drone_objects_distances_np(drone_pos, objects_pos, ray=0.0):
     # Calculate distance between the drone and each object
-    return np.linalg.norm(objects_pos -np.tile(drone_pos, (objects_pos.shape[0],1)), axis=1) - ray
+    return np.linalg.norm(objects_pos - drone_pos.T, axis=1) - ray
 
 def n_nearest_objects(drone_pos, objects_pos, num=4):
     # Get indices of the n nearest objects
@@ -45,7 +45,7 @@ def norm_sigmoid_np(x, thresh = 6, delta = 0.5, alpha = 10.0):
     return mapped_y
 
 def sigmoid_ca(x, alpha=10.0):
-    return 1 / (1 + ca.exp(-alpha*x))
+    return 1 / (1 + ca.exp(-alpha*x)) # ca.Functiontion('sigmoid' , [x] , [1 / (1 + ca.exp(-alpha*x))])
 
 def norm_sigmoid_ca(x, thresh = 6, delta = 0.5, alpha = 10.0):
     x_min = thresh - delta
@@ -81,7 +81,7 @@ fov tools
 def fov_weight_fun_numpy(drone_pos, drone_yaw, objects_pos, thresh_distance=5):
     n_objects = objects_pos.shape[0]
     # Calculate distance between the drone and each object
-    distances = drone_objects_distances_np(drone_pos.T, objects_pos)
+    distances = drone_objects_distances_np(drone_pos, objects_pos)
     # Calculate direction from drone to each object
     drone_objects_dir = objects_pos - np.tile(drone_pos.T, (n_objects,1))
     drone_yaw_dir = np.vstack((np.cos(drone_yaw), np.sin(drone_yaw)))
@@ -89,15 +89,65 @@ def fov_weight_fun_numpy(drone_pos, drone_yaw, objects_pos, thresh_distance=5):
     #return norm_sigmoid(vect_alignment, thresh=0.8, delta=0.5, alpha=1) * gaussian(distances, mu=thresh_distance, sigma=5.0)
     return  norm_sigmoid_np(vect_alignment,  thresh=0.94, delta=0.03, alpha=2) * gaussian_np(distances, mu=thresh_distance, sigma=1)
 
-def fov_weight_fun_casadi(drone_pos, drone_yaw, objects_pos, thresh_distance=5):
+def _fov_weight_fun_casadi(drone_pos, drone_yaw, objects_pos, thresh_distance=5):
     n_objects = objects_pos.shape[0]
     # Define distance function
     distance_expr = ca.sqrt((drone_pos[0] - objects_pos[:, 0])**2 + (drone_pos[1] - objects_pos[:, 1])**2)
+    
+    #return  norm_sigmoid(vect_alignment, thresh=0.8, delta=0.5, alpha=1) * gaussian(distance_expr, mu=thresh_distance, sigma=5.0) 
+    return   norm_sigmoid_ca(vect_alignment(drone_pos,drone_yaw,objects_pos),  thresh=0.94, delta=0.03, alpha=2)* gaussian_ca(distance_expr, mu=thresh_distance, sigma=1)
+
+def vect_alignment(drone_pos,drone_yaw,objects_pos):
+    n_objects = objects_pos.shape[0]
     drone_yaw_dir = ca.vertcat(ca.cos(drone_yaw), ca.sin(drone_yaw))
     drone_objects_dir = objects_pos - ca.repmat(drone_pos.T, n_objects, 1)
     
     normalized_directions = drone_objects_dir / ca.power(ca.sum2(ca.power(drone_objects_dir,2)),(1./2))
-    vect_alignment = ca.mtimes(normalized_directions, drone_yaw_dir)
+    return  ca.mtimes(normalized_directions, drone_yaw_dir)
 
-    #return  norm_sigmoid(vect_alignment, thresh=0.8, delta=0.5, alpha=1) * gaussian(distance_expr, mu=thresh_distance, sigma=5.0) 
-    return   norm_sigmoid_ca(vect_alignment,  thresh=0.94, delta=0.03, alpha=2)* gaussian_ca(distance_expr, mu=thresh_distance, sigma=1)
+def drone_obj_angle(drone_pos, object_pos):
+    drone_object_dir = drone_pos-object_pos
+    angle = ca.atan2(drone_object_dir[-1], drone_object_dir[0])
+    return angle
+
+
+def fov_weight_fun_casadi(thresh_distance=5):
+    drone_pos_sym = ca.MX.sym('drone_pos', 2)       # 2-dimensional drone position
+    drone_yaw_sym = ca.MX.sym('drone_yaw')          # drone yaw angle
+    objects_pos_sym = ca.MX.sym('objects_pos', 2)   # Objects positions (variable number)
+    distance_expr = ca.norm_2(objects_pos_sym - drone_pos_sym)
+    # Calculate vector alignment
+    normalized_directions = (objects_pos_sym - drone_pos_sym) / distance_expr
+    drone_yaw_dir = ca.vertcat(ca.cos(drone_yaw_sym), ca.sin(drone_yaw_sym))
+
+    vect_alignment = normalized_directions.T @ drone_yaw_dir
+
+    # Define parameters for norm_sigmoid_ca and gaussian_ca
+    thresh = 0.94
+    delta = 0.03
+    alpha = 2
+    sigma = 1
+    
+    # Apply norm_sigmoid_ca and gaussian_ca
+    sigmoid_output = norm_sigmoid_ca(vect_alignment, thresh, delta, alpha)
+    gaussian_output = gaussian_ca(distance_expr, mu=thresh_distance, sigma=sigma)
+    
+    # Combine the outputs (element-wise multiplication)
+    fov_result = sigmoid_output * gaussian_output
+    # Create CasADi function object
+    fov_function = ca.Function('fov_function', [drone_pos_sym, drone_yaw_sym, objects_pos_sym], [fov_result])
+    
+
+    return fov_function
+
+def get_depth_value(depth_image, x, y, inv_matrix_param, window_size=50):
+    window = depth_image[y-window_size:y+window_size, x-window_size:x+window_size]
+    non_zero = window[ np.where(window != 0)]
+    return inv_matrix_param.dot(np.array([x,y,1]).T).T * np.mean(non_zero) * 0.001 if len(non_zero) > 0 else np.zeros((3))
+
+def get_centroid_pixel(depth_image):
+    y, x = np.where((depth_image != 0) & (depth_image < 5 / 0.001))
+    if len(y) == 0 or len(x) == 0: return (None, None)
+    centroid_x = np.average(x, weights=depth_image[y, x])
+    centroid_y = np.average(y, weights=depth_image[y, x])
+    return (int(centroid_x),int(centroid_y))

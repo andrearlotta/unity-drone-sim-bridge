@@ -18,46 +18,47 @@ def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
     ray_obs = 1.0
     
     # States struct (optimization variables):
-    Xrobot = model.set_variable(var_type='_x', var_name='x_robot', shape=(3,1))
+    x_robot = model.set_variable(var_type='_x', var_name='x_robot', shape=(3,1))
     lambda_ = model.set_variable(var_type='_x', var_name='lambda', shape=(dim_lambda,1))
     lambda_prev = model.set_variable(var_type='_x', var_name='lambda_prev', shape=(dim_lambda,1))
     y = model.set_variable(var_type='_x', var_name='y', shape=(dim_lambda,1))
     
     # Input struct (optimization variables):
-    U_Xrobot = model.set_variable(var_type='_u', var_name='Xrobot_set', shape=(3,1))
+    u_x_robot = model.set_variable(var_type='_u', var_name='x_robot_set', shape=(3,1))
 
     # Time-varying parameters
-    ReducedOrderXrobot_tree_lambda = model.set_variable('_tvp', 'ReducedOrderXrobot_tree_lambda', (dim_lambda, 2))
-    ReducedOrderXrobot_tree_obs = model.set_variable('_tvp', 'ReducedOrderXrobot_tree_obs', (dim_obs, 2))
-    ResidualH = model.set_variable('_tvp', 'ReducedOrderH', shape=(1,1))
-    ResidualH_prev = model.set_variable('_tvp', 'ReducedOrderH_prev', shape=(1,1))
+    reduced_order_x_robot_tree_lambda = model.set_variable('_tvp', 'reduced_order_x_robot_tree_lambda', (dim_lambda, 2))
+    reduced_order_x_robot_tree_obs = model.set_variable('_tvp', 'reduced_order_x_robot_tree_obs', (dim_obs, 2))
+    residual_h = model.set_variable('_tvp', 'reduced_order_h', shape=(1,1))
+    residual_h_prev = model.set_variable('_tvp', 'reduced_order_h_prev', shape=(1,1))
 
-    mapped_g = setup_g_inline_casadi(g)
-
+    single_g = setup_g_inline_casadi(g)
+    mapped_g = g_map_casadi(single_g, reduced_order_x_robot_tree_lambda.shape)
+    
     # Expressions
-    def compute_H(lambda_, ResidualH):
-        return sum1(lambda_ * log(lambda_)) + ResidualH
+    def compute_H(lambda_, residual_h):
+        return sum1(lambda_ * log(lambda_)) + residual_h
 
-    def compute_H_prev(lambda_prev, ResidualH_prev):
-        return sum1(lambda_prev * log(lambda_prev)) + ResidualH_prev
+    def compute_H_prev(lambda_prev, residual_h_prev):
+        return sum1(lambda_prev * log(lambda_prev)) + residual_h_prev
 
-    def compute_y(Xrobot,ReducedOrderXrobot_tree_lambda):
-        return g_map_casadi(mapped_g, ReducedOrderXrobot_tree_lambda.shape)(
-            Xrobot[:2],
-            Xrobot[-1],
-            ReducedOrderXrobot_tree_lambda
+    def compute_y(x_robot,reduced_order_x_robot_tree_lambda):
+        return mapped_g(
+            x_robot[:2],
+            x_robot[-1],
+            reduced_order_x_robot_tree_lambda
         )
 
     def compute_cost_function(H, H_prev):
         return -(H - H_prev)
 
     # Define the expressions using the created functions
-    H = compute_H(lambda_, ResidualH)
-    H_prev = compute_H_prev(lambda_prev, ResidualH_prev)
-    y_expr = compute_y(Xrobot + U_Xrobot, ReducedOrderXrobot_tree_lambda)
+    H = compute_H(lambda_, residual_h)
+    H_prev = compute_H_prev(lambda_prev, residual_h_prev)
+    y_expr = compute_y(x_robot + u_x_robot, reduced_order_x_robot_tree_lambda)
     cost_function = compute_cost_function(H, H_prev)
-    obstacle_expression =  drone_objects_distances_casadi(  Xrobot[:2]+U_Xrobot[:2],
-                                                            ReducedOrderXrobot_tree_obs,
+    obstacle_expression =  drone_objects_distances_casadi(  x_robot[:2]+u_x_robot[:2],
+                                                            reduced_order_x_robot_tree_obs,
                                                             ray = ray_obs
                                                         )
 
@@ -68,7 +69,7 @@ def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
     model.set_expression('y', y_expr)
     model.set_expression('cost_function', cost_function)
 
-    model.set_rhs('x_robot', Xrobot + U_Xrobot)
+    model.set_rhs('x_robot', x_robot + u_x_robot)
     model.set_rhs('lambda', bayes(lambda_, model.aux['y']))
     model.set_rhs('lambda_prev', lambda_)
     model.set_rhs('y', model.aux['y'])

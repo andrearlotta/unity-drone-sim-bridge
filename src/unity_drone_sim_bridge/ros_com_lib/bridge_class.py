@@ -22,8 +22,6 @@ class BridgeClass:
     def getData(self):
         ret = {}
         for sensor, sub in self.__subscribers_dict.items():
-            while sub.getData() is None:
-                pass
             ret[sensor]= sub.getData()
         return ret
 

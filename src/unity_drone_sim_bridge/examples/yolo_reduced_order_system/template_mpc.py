@@ -29,7 +29,7 @@ import os
 import do_mpc
 
 
-def template_mpc(model, get_obs, get_lambdas, get_residual_H, get_cond_y, silence_solver = False):
+def template_mpc(model,g, get_obs, get_lambdas, get_residual_H, get_nn_input, silence_solver = False, rt=False):
     """
     --------------------------------------------------------------------------
     template_mpc: tuning parameters
@@ -38,17 +38,23 @@ def template_mpc(model, get_obs, get_lambdas, get_residual_H, get_cond_y, silenc
     mpc = do_mpc.controller.MPC(model)
 
     setup_mpc = {
-        'n_horizon': 10,
-        'n_robust': 0,
+        'n_horizon': 20,
+        'n_robust': 1,
         'open_loop': 0,
         't_step': 1.0,
-        'state_discretization': 'collocation',
         'collocation_type': 'radau',
-        'collocation_deg': 2,
-        'collocation_ni': 1,
+        #'collocation_deg': 10,
+        #'collocation_ni': 10,
         'store_full_solution': True,
         # Use MA27 linear solver in ipopt for faster calculations:
-        'nlpsol_opts': {'ipopt.linear_solver': 'MA27', 'ipopt.warm_start_init_point' : 'yes'}
+        'nlpsol_opts': {'ipopt.linear_solver': 'ma27',
+                        "ipopt.max_iter": 100,
+                        #"ipopt.tol": 10e-3, #default 10e-8
+                        #"ipopt.warm_start_init_point"       :   "yes",
+                        #"ipopt.warm_start_same_structure"   :   "yes",
+                        #"ipopt.jacobian_approximation"      :   "finite-difference-values",
+                        #"ipopt.gradient_approximation"       :   "finite-difference-values",
+                        "ipopt.hessian_approximation"        :   "limited-memory" }
     }
 
     mpc.set_param(**setup_mpc)
@@ -62,30 +68,31 @@ def template_mpc(model, get_obs, get_lambdas, get_residual_H, get_cond_y, silenc
 
 
     mpc.set_objective(mterm=mterm, lterm=lterm)
-    mpc.set_rterm(u_x_robot=np.array(3*[1e-2]))
+    #mpc.set_rterm(x_robot_set=np.array(3*[1e-1]))
 
 
-    mpc.bounds['lower','_u','u_x_robot'] = 2 * [-.5] + [-np.pi/40]
-    mpc.bounds['upper','_u','u_x_robot'] = 2 * [+.5] + [+np.pi/40]
+    mpc.bounds['lower','_u','x_robot_set'] = 2 * [-.5] + [-np.pi/40]
+    mpc.bounds['upper','_u','x_robot_set'] = 2 * [+.5] + [+np.pi/40]
     
     # Avoid the obstacles:
-    mpc.set_nl_cons('obstacles', -model.aux['obstacle_distance'], 0)
+    #mpc.set_nl_cons('obstacles', -model.aux['obstacle_distance'], 0)
 
     tvp_template = mpc.get_tvp_template()
 
     def tvp_fun(time_x):
-        gen_cond = get_cond_y()
         gen_obs = get_obs()
         gen_lambdas = get_lambdas()
         gen_residual_H = get_residual_H()
         gen_residual_H = get_residual_H()
-        print(np.count_nonzero(gen_cond))
+        if rt:  
+            get_nn_input_H = get_nn_input() 
+            params = [g.get_params(tree) for tree in get_nn_input_H ]
         for k in range(mpc.settings.n_horizon):
-            tvp_template['_tvp', k,'conditional_y'] = gen_cond
-            tvp_template['_tvp', k, 'nearby_trees_obs'] = gen_obs
-            tvp_template['_tvp', k, 'nearby_trees_lambda'] = gen_lambdas
-            tvp_template['_tvp', k, 'residual_h_prev'] = gen_residual_H
-            tvp_template['_tvp', k, 'residual_h'] = gen_residual_H
+            tvp_template['_tvp', k, 'reduced_order_x_robot_tree_obs'] = gen_obs
+            tvp_template['_tvp', k, 'reduced_order_x_robot_tree_lambda'] = gen_lambdas
+            tvp_template['_tvp', k, 'reduced_order_h_prev'] = gen_residual_H
+            tvp_template['_tvp', k, 'reduced_order_h'] = gen_residual_H
+            if rt: tvp_template['_tvp', k, 'params_x_robot_tree_tree_lambda'] = params
         return tvp_template
     mpc.set_tvp_fun(tvp_fun)
 

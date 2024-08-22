@@ -48,7 +48,7 @@ def template_mpc(model, get_obs, get_lambdas, get_residual_H, silence_solver = F
         'collocation_ni': 1,
         'store_full_solution': True,
         # Use MA27 linear solver in ipopt for faster calculations:
-        'nlpsol_opts': {'ipopt.linear_solver': 'MA27'}
+        'nlpsol_opts': {'ipopt.linear_solver': 'MA27', "ipopt.max_iter":100, 'ipopt.warm_start_init_point' : 'yes'}
     }
 
     mpc.set_param(**setup_mpc)

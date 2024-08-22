@@ -1,29 +1,7 @@
-#
-#   This file is part of do-mpc
-#
-#   do-mpc: An environment for the easy, modular and efficient implementation of
-#        robust nonlinear model predictive control
-#
-#   Copyright (c) 2014-2019 Sergio Lucia, Alexandru Tatulea-Codrean
-#                        TU Dortmund. All rights reserved
-#
-#   do-mpc is free software: you can redistribute it and/or modify
-#   it under the terms of the GNU Lesser General Public License as
-#   published by the Free Software Foundation, either version 3
-#   of the License, or (at your option) any later version.
-#
-#   do-mpc is distributed in the hope that it will be useful,
-#   but WITHOUT ANY WARRANTY; without even the implied warranty of
-#   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#   GNU Lesser General Public License for more details.
-#
-#   You should have received a copy of the GNU General Public License
-#   along with do-mpc.  If not, see <http://www.gnu.org/licenses/>.
-
 import numpy as np
 from unity_drone_sim_bridge.ros_com_lib.bridge_class import BridgeClass
-from unity_drone_sim_bridge.sensors import SENSORS
-from unity_drone_sim_bridge.g_func_lib.generic_tools import *
+from unity_drone_sim_bridge.ros_com_lib.sensors import SENSORS
+from unity_drone_sim_bridge.generic_tools import *
 from unity_drone_sim_bridge.g_func_lib.g_func_tools import bayes
 
 class Simulator:
@@ -53,10 +31,10 @@ class Simulator:
         self.update_nearest_trees()
 
     def update_nearest_trees(self):
-        """Update nearest tree indices."""
-        self.ReducedOrderIdxsLambda = n_nearest_objects(self.x_k['x_robot'][:2].reshape(1, -1), self.trees_pos, num=self.dim_lambda)
-        self.ResidualIdxsLambda = np.setdiff1d(np.arange(self.trees_pos.shape[0]), self.ReducedOrderIdxsLambda)
-        self.ReducedOrderIdxsTree = n_nearest_objects(self.x_k['x_robot'][:2].reshape(1, -1), self.trees_pos, num=self.dim_obs)
+        """Update nearest tree indices.""" 
+        self.reduced_order_lambda_idxs = n_nearest_objects(self.x_k['x_robot'][:2], self.trees_pos, num=self.dim_lambda)
+        self.residual_lambda_idxs = np.setdiff1d(np.arange(self.trees_pos.shape[0]), self.reduced_order_lambda_idxs)
+        self.reduced_order_obs_idxs = n_nearest_objects(self.x_k['x_robot'][:2].reshape(1, -1), self.trees_pos, num=self.dim_obs)
 
     def update(self, y_z):
         """Update the drone state."""
@@ -71,18 +49,20 @@ class Simulator:
             self.x_k['y'] = 0.5 + (qi_z - 0.5) * fov_weight_fun_numpy(
                 drone_pos=y_z['gps'][:2], 
                 drone_yaw=y_z['gps'][-1], 
-                objects_pos=self.trees_pos[self.ReducedOrderIdxsLambda][:])
+                objects_pos=self.trees_pos[self.reduced_order_lambda_idxs][:])
         
         self.x_k_full['lambda_prev'] = self.x_k_full['lambda']
-        self.x_k_full['lambda'][self.ReducedOrderIdxsLambda] = bayes(self.x_k_full['lambda_prev'][self.ReducedOrderIdxsLambda], self.x_k['y'])
+        self.x_k_full['lambda'][self.reduced_order_lambda_idxs] = bayes(self.x_k_full['lambda_prev'][self.reduced_order_lambda_idxs], self.x_k['y'])
         self.x_k['lambda_prev'] = self.x_k['lambda']
-        self.x_k['lambda'] = self.x_k_full['lambda'][self.ReducedOrderIdxsLambda]
+        self.x_k['lambda'] = self.x_k_full['lambda'][self.reduced_order_lambda_idxs]
     
     def mpc_get_obs(self):
-        return self.trees_pos[self.ReducedOrderIdxsTree]
+        return self.trees_pos[self.reduced_order_obs_idxs]
 
     def mpc_get_lambdas(self):
-        return self.trees_pos[self.ReducedOrderIdxsLambda]
+        return self.trees_pos[self.reduced_order_lambda_idxs]
 
     def mpc_get_residual_H(self):
-        return np.sum(self.x_k_full['lambda'][self.ResidualIdxsLambda] * np.log(self.x_k_full['lambda'][self.ResidualIdxsLambda]))
+        return np.sum(self.x_k_full['lambda'][self.residual_lambda_idxs] * np.log(self.x_k_full['lambda'][self.residual_lambda_idxs]))
+    
+   

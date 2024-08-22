@@ -11,8 +11,10 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
   sensor_msgs
+  vision_msgs
   std_msgs
   geometry_msgs
+  nav_msgs
   message_generation
 )
 
@@ -163,6 +165,8 @@ include_directories(
 ## in contrast to setup.py, you can choose the destination
 catkin_install_python(PROGRAMS
   scripts/main.py
+  scripts/data_association_node.py
+  scrits/
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

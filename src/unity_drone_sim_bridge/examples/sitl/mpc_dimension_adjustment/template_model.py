@@ -6,7 +6,7 @@ from unity_drone_sim_bridge.g_func_lib.g_func_tools import *
 from unity_drone_sim_bridge.qi_lib.qi_tools import *
 from unity_drone_sim_bridge.g_func_lib.gp_tools import *
 
-def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
+def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None, cond=False):
     """
     --------------------------------------------------------------------------
     template_model: Variables / RHS / AUX
@@ -18,23 +18,22 @@ def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
     ray_obs = 1.0
     
     # States struct (optimization variables):
-    x_robot = model.set_variable(var_type='_x', var_name='x_robot', shape=(3,1))
-    lambda_ = model.set_variable(var_type='_x', var_name='lambda', shape=(dim_lambda,1))
-    lambda_prev = model.set_variable(var_type='_x', var_name='lambda_prev', shape=(dim_lambda,1))
-    y = model.set_variable(var_type='_x', var_name='y', shape=(dim_lambda,1))
+    x_robot = model.set_variable(var_type='_x', var_name='x_robot', shape=3)
+    lambda_ = model.set_variable(var_type='_x', var_name='lambda', shape=dim_lambda)
+    lambda_prev = model.set_variable(var_type='_x', var_name='lambda_prev', shape=dim_lambda)
+    y = model.set_variable(var_type='_x', var_name='y', shape=dim_lambda)
     
     # Input struct (optimization variables):
-    u_x_robot = model.set_variable(var_type='_u', var_name='u_x_robot', shape=(3,1))
-    
-    # Time-varying parameters
-    residual_h = model.set_variable('_tvp', 'residual_h', shape=(1,1))
-    residual_h_prev = model.set_variable('_tvp', 'residual_h_prev', shape=(1,1))
-    nearby_trees_lambda_x = model.set_variable('_tvp', 'nearby_trees_lambda_x',  shape=(dim_lambda, 1))
-    nearby_trees_lambda_y = model.set_variable('_tvp', 'nearby_trees_lambda_y',  shape=(dim_lambda, 1))
-    nearby_trees_obs_x = model.set_variable('_tvp', 'nearby_trees_obs_x',  shape=(dim_obs, 1))
-    nearby_trees_obs_y = model.set_variable('_tvp', 'nearby_trees_obs_y',  shape=(dim_obs, 1))
+    u_x_robot = model.set_variable(var_type='_u', var_name='u_x_robot', shape=3)
 
-    mapped_g = setup_g_inline_casadi(g)
+    # Time-varying parameters
+    residual_h = model.set_variable('_tvp', 'residual_h', shape=1)
+    residual_h_prev = model.set_variable('_tvp', 'residual_h_prev', shape=1)
+    nearby_trees_lambda_x = model.set_variable('_tvp', 'nearby_trees_lambda_x',  shape=dim_lambda)
+    nearby_trees_lambda_y = model.set_variable('_tvp', 'nearby_trees_lambda_y',  shape=dim_lambda)
+    nearby_trees_obs_x = model.set_variable('_tvp', 'nearby_trees_obs_x',  shape=dim_obs)
+    nearby_trees_obs_y = model.set_variable('_tvp', 'nearby_trees_obs_y',  shape=dim_obs)
+    
 
     # Expressions
     def compute_H(lambda_, residual_h):
@@ -43,12 +42,8 @@ def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
     def compute_H_prev(lambda_prev, residual_h_prev):
         return sum1(lambda_prev * log(lambda_prev)) + residual_h_prev
 
-    def compute_y(x_robot,nearby_trees_lambda):
-        return g_map_casadi(mapped_g, nearby_trees_lambda.shape)(
-            x_robot[:2],
-            x_robot[-1],
-            hcat([nearby_trees_lambda_x,nearby_trees_lambda_y])
-        )
+    map_g = g_map_casadi(g, hcat([nearby_trees_lambda_x,nearby_trees_lambda_y]).shape)
+
 
     def compute_cost_function(H, H_prev):
         return -(H - H_prev)
@@ -56,7 +51,9 @@ def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
     # Define the expressions using the created functions
     H = compute_H(lambda_, residual_h)
     H_prev = compute_H_prev(lambda_prev, residual_h_prev)
-    y_expr = compute_y(x_robot + u_x_robot, hcat([nearby_trees_lambda_x,nearby_trees_lambda_y]))
+    y_expr = map_g(x_robot[:2]+u_x_robot[:2],
+                   x_robot[-1]+u_x_robot[-1],
+                   hcat([nearby_trees_lambda_x, nearby_trees_lambda_y]))
     cost_function = compute_cost_function(H, H_prev)
     obstacle_expression =  drone_objects_distances_casadi(  x_robot[:2]+u_x_robot[:2],
                                                             hcat([nearby_trees_obs_x, nearby_trees_obs_y]),

@@ -18,20 +18,20 @@ def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
     ray_obs = 1.0
     
     # States struct (optimization variables):
-    x_robot = model.set_variable(var_type='_x', var_name='x_robot', shape=(3,1))
-    lambda_ = model.set_variable(var_type='_x', var_name='lambda', shape=(dim_lambda,1))
-    lambda_prev = model.set_variable(var_type='_x', var_name='lambda_prev', shape=(dim_lambda,1))
-    y = model.set_variable(var_type='_x', var_name='y', shape=(dim_lambda,1))
+    x_robot = model.set_variable(var_type='_x', var_name='x_robot', shape=3)
+    lambda_ = model.set_variable(var_type='_x', var_name='lambda', shape=dim_lambda)
+    lambda_prev = model.set_variable(var_type='_x', var_name='lambda_prev', shape=dim_lambda)
+    y = model.set_variable(var_type='_x', var_name='y', shape=dim_lambda)
     
     # Input struct (optimization variables):
-    u_x_robot = model.set_variable(var_type='_u', var_name='u_x_robot', shape=(3,1))
+    u_x_robot = model.set_variable(var_type='_u', var_name='u_x_robot', shape=3)
 
     # Time-varying parameters
     nearby_trees_lambda = model.set_variable('_tvp', 'nearby_trees_lambda', (dim_lambda, 2))
     nearby_trees_obs = model.set_variable('_tvp', 'nearby_trees_obs', (dim_obs, 2))
     residual_h = model.set_variable('_tvp', 'residual_h', shape=1)
     residual_h_prev = model.set_variable('_tvp', 'residual_h_prev', shape=1)
-    conditional_y = model.set_variable('_tvp', 'conditional_y', shape=1)
+    conditional_y = model.set_variable('_tvp', 'conditional_y', shape=dim_lambda)
 
     mapped_g = setup_g_inline_casadi(g)
 
@@ -42,21 +42,22 @@ def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
     def compute_H_prev(lambda_prev, residual_h_prev):
         return sum1(lambda_prev * log(lambda_prev)) + residual_h_prev
 
-    def compute_y(x_robot,nearby_trees_lambda):
-        return g_map_casadi_fixed_cond(mapped_g, nearby_trees_lambda.shape)(
-            x_robot[:2],
-            x_robot[-1],
-            nearby_trees_lambda,
-            conditional_y
-        )
-
+    #g_single = setup_g_inline_casadi_fixed_cond(g)
+    #g_mapped = g_map_casadi_fixed_cond(g_single, nearby_trees_lambda.shape)
+    g_mapped = g_map_cond_casadi(g,
+                                nearby_trees_lambda)
     def compute_cost_function(H, H_prev):
         return -(H - H_prev)
 
     # Define the expressions using the created functions
     H = compute_H(lambda_, residual_h)
     H_prev = compute_H_prev(lambda_prev, residual_h_prev)
-    y_expr = compute_y(x_robot + u_x_robot, nearby_trees_lambda)
+    y_expr = g_mapped(
+            x_robot[:2]+u_x_robot[:2],
+            x_robot[-1]+u_x_robot[-1],
+            nearby_trees_lambda,
+            conditional_y
+        )
     cost_function = compute_cost_function(H, H_prev)
     obstacle_expression =  drone_objects_distances_casadi(  x_robot[:2]+u_x_robot[:2],
                                                             nearby_trees_obs,
