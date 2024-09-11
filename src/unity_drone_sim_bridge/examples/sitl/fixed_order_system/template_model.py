@@ -2,9 +2,9 @@ import numpy as np
 from casadi import *
 from casadi.tools import *
 import do_mpc
-from unity_drone_sim_bridge.g_func_lib.g_func_tools import *
+from unity_drone_sim_bridge.surrogate_lib.surrogate_func_tools import *
 from unity_drone_sim_bridge.qi_lib.qi_tools import *
-from unity_drone_sim_bridge.g_func_lib.gp_tools import *
+from unity_drone_sim_bridge.surrogate_lib.gp_tools import *
 
 def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
     """

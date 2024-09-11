@@ -6,7 +6,7 @@ import csv
 import casadi as ca
 import matplotlib.pyplot as plt
 from unity_drone_sim_bridge.gp_mpc_lib.gp_class import GP
-from unity_drone_sim_bridge.g_func_lib.load_database import *
+from unity_drone_sim_bridge.surrogate_lib.load_database import *
 
 def load_ca_gp(synthetic=True, viz=True, N=40, method='ME'):
     # Limits in the training data

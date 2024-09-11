@@ -22,7 +22,7 @@
 
 import numpy as np
 from unity_drone_sim_bridge.generic_tools import *
-from unity_drone_sim_bridge.g_func_lib.g_func_tools import bayes_np
+from unity_drone_sim_bridge.surrogate_lib.surrogate_func_tools import bayes_np
 from unity_drone_sim_bridge.examples.sitl.setup_fake_field import *
 
 class MockBridgeClass:

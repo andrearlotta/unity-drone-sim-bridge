@@ -166,7 +166,6 @@ include_directories(
 catkin_install_python(PROGRAMS
   scripts/main.py
   scripts/data_association_node.py
-  scrits/
   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 

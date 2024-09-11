@@ -26,12 +26,6 @@ class Simulator:
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
 
         self.update_robot_state()
-        self.update_nearest_trees()
-
-    def update_nearest_trees(self):
-        self.reduced_order_lambda_idxs = n_nearest_objects(self.x_k['x_robot'][:2], self.trees_pos, num=self.dim_lambda)
-        self.residual_lambda_idxs = np.setdiff1d(np.arange(self.trees_pos.shape[0]), self.reduced_order_lambda_idxs)
-        self.reduced_order_obs_idxs = n_nearest_objects(self.x_k['x_robot'][:2], self.trees_pos, num=self.dim_obs)
 
     def update_robot_state(self):
         robot_pose = []
@@ -51,19 +45,10 @@ class Simulator:
         self.x_k['x_robot']  = robot_pose
 
     def update(self, y_z):
-        self.update_nearest_trees()
         self.update_robot_state()
-
-        # Calculate condition for single tree
-        for tree_pos in self.trees_pos[self.reduced_order_lambda_idxs]:
-            print(tree_pos)
-            phi = np.mod(np.arctan2(self.x_k['x_robot'][1]-tree_pos[1], self.x_k['x_robot'][0]-tree_pos[0]) + np.pi/2 + 2*np.pi, 2 * np.pi)
-            print(np.power(np.sum(np.power(self.x_k['x_robot'][:2].T-tree_pos, 2)),(1./2)),
-                np.rad2deg(phi),
-                np.rad2deg(np.mod(phi - self.x_k['x_robot'][-1] + np.pi + np.pi/2, 2 * np.pi)- np.pi))
- 
         scores = np.array(y_z['tree_scores'])
 
+        print(self.x_k['y'][np.nonzero(scores!=0.5)[0]])
         self.x_k['y'][np.nonzero(scores!=0.5)[0]] = scores[np.nonzero(scores!=0.5)]
         
         self.x_k['lambda_prev'] = self.x_k['lambda'].copy()
@@ -76,23 +61,14 @@ class Simulator:
     
     def get_mpc_x0(self):
         x_0 = self.x_k.copy()
-        x_0['lambda_prev']  =   self.x_k['lambda_prev'][self.reduced_order_lambda_idxs]
-        x_0['lambda']       =   self.x_k['lambda'][self.reduced_order_lambda_idxs]
-        x_0['y']            =   self.x_k['y'][self.reduced_order_lambda_idxs]
+        x_0['lambda_prev']  =   self.x_k['lambda_prev']
+        x_0['lambda']       =   self.x_k['lambda']
+        x_0['y']            =   self.x_k['y']
         return np.concatenate(list(x_0.values()), axis=None)
-
-    def mpc_get_obs(self):
-        return self.trees_pos[self.reduced_order_obs_idxs]
-
-    def mpc_get_lambdas(self):
-        return self.trees_pos[self.reduced_order_lambda_idxs]
-
-    def mpc_get_residual_H(self):
-        return np.sum(self.x_k['lambda'][self.residual_lambda_idxs] * np.log(self.x_k['lambda'][self.residual_lambda_idxs]))
     
     def mpc_nn_inputs(self):
         tree_pos = self.x_k['x_robot'][:2].reshape((2,))
-        drone_pos = self.trees_pos[self.reduced_order_lambda_idxs]
+        drone_pos = self.trees_pos
         drone_yaw = self.x_k['x_robot'][-1]
         
         # Vector difference between drone and each tree

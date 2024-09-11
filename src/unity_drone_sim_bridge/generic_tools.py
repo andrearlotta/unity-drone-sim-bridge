@@ -77,6 +77,24 @@ def fake_nn(x):
 '''
 fov tools
 '''
+def fov_weight_fun_polar_numpy(drone_yaw, objects_pos, thresh_distance=5):
+    # Unpack polar coordinates from objects_pos
+    distances = objects_pos[ 0]
+    angles = objects_pos[1]
+    
+    # Calculate the relative angle between the drone's orientation and the direction to each object
+    relative_angles = angles - drone_yaw
+    # Normalize these angles to be within -pi to pi for correct directional alignment
+    relative_angles = (relative_angles + np.pi) % (2 * np.pi) - np.pi
+    
+    # Compute vector alignment using cosine, as it effectively measures the directional agreement
+    vect_alignment = np.cos(relative_angles)
+    
+    # Compute weights using a sigmoid function and a Gaussian distribution
+    # Sigmoid to check alignment (vect_alignment close to 1 means good alignment)
+    # Gaussian to give higher weight to closer objects
+    return norm_sigmoid_np(vect_alignment, thresh=0.94, delta=0.03, alpha=2) * gaussian_np(distances, mu=thresh_distance, sigma=1)
+
 
 def fov_weight_fun_numpy(drone_pos, drone_yaw, objects_pos, thresh_distance=5):
     n_objects = objects_pos.shape[0]

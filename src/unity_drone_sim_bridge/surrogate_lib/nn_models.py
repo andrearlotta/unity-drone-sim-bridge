@@ -32,29 +32,21 @@ class AlternativeSurrogateNetwork(nn.Module):
 
         # Input layer
         layers.append(nn.Linear(input_size, hidden_size))
-        layers.append(nn.BatchNorm1d(hidden_size))
         layers.append(nn.ReLU())
 
         # Hidden layers
         for _ in range(num_hidden_layers):
             layers.append(nn.Linear(hidden_size, hidden_size))
-            layers.append(nn.BatchNorm1d(hidden_size))
             layers.append(nn.ReLU())
 
         # Output layer
         layers.append(nn.Linear(hidden_size, 1))
-        layers.append(nn.Sigmoid())  # Ensure output is in the range [0, 1]
         self.network = nn.Sequential(*layers)
 
-        with torch.no_grad():
-            self.network[-1].weight = torch.nn.Parameter(torch.tensor([[0.5]]))
-            self.network[-1].bias = torch.nn.Parameter(torch.tensor([0.5]))
-        # the tensor shape you assign should match the model parameter itself
-
-        self.network[-1].requires_grad_(False)
 
     def forward(self, x):
         output = self.network(x)
+        # Scale the sigmoid output to the range [0.5, 1.0]
         return output
 
 

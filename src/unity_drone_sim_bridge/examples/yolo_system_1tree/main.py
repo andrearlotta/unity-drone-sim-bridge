@@ -1,7 +1,7 @@
 from unity_drone_sim_bridge.surrogate_lib.surrogate_func_tools import load_g
-from unity_drone_sim_bridge.examples.yolo_reduced_order_system.template_model import template_model
-from unity_drone_sim_bridge.examples.yolo_reduced_order_system.template_mpc import template_mpc
-from unity_drone_sim_bridge.examples.yolo_reduced_order_system.template_simulator import Simulator
+from unity_drone_sim_bridge.examples.yolo_system_1tree.template_model import template_model
+from unity_drone_sim_bridge.examples.yolo_system_1tree.template_mpc import template_mpc
+from unity_drone_sim_bridge.examples.yolo_system_1tree.template_simulator import Simulator
 import numpy as np
 from do_mpc.data import save_results
 import time
@@ -17,14 +17,12 @@ def run_simulation(g_function = 'mlp', simulation_steps= 10, rt=False, gpu=False
              use_yolo=use_yolo)
     
     model = template_model(g=g, 
-                           dim_lambda=4)
+                           dim_lambda=1)
     
     simulator = Simulator(model, 
-                          dim_lambda=4)
+                          dim_lambda=1)
     
-    mpc = template_mpc(model=model, g=g, get_obs=simulator.mpc_get_obs,
-                       get_lambdas=simulator.mpc_get_lambdas, 
-                       get_residual_H=simulator.mpc_get_residual_H,
+    mpc = template_mpc(model=model, g=g,
                        get_nn_input= simulator.mpc_nn_inputs)
     
     """

@@ -2,7 +2,7 @@ import numpy as np
 from unity_drone_sim_bridge.ros_com_lib.bridge_class import BridgeClass
 from unity_drone_sim_bridge.ros_com_lib.sensors import SENSORS
 from unity_drone_sim_bridge.generic_tools import *
-from unity_drone_sim_bridge.g_func_lib.g_func_tools import bayes
+from unity_drone_sim_bridge.surrogate_lib.surrogate_func_tools import bayes
 
 class Simulator:
     """

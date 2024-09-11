@@ -1,6 +1,6 @@
 import numpy as np
-from unity_drone_sim_bridge.g_func_lib.gp_tools import load_ca_gp
-from unity_drone_sim_bridge.g_func_lib.nn_tools import LoadNN
+from unity_drone_sim_bridge.surrogate_lib.gp_tools import load_ca_gp
+from unity_drone_sim_bridge.surrogate_lib.nn_tools import LoadNN
 from unity_drone_sim_bridge.generic_tools import *
 import casadi as ca
 
@@ -15,9 +15,7 @@ def g_map_cond_casadi(  f,
     tree_pos1  = ca.MX.sym('tree_pos_single',2)
 
     fov_f = fov_weight_fun_casadi()
-    y_single = f(drone_pos1,drone_yaw1, tree_pos1) \
-        if use_yolo \
-        else fov_f(drone_pos1,drone_yaw1,tree_pos1) * (f(drone_pos1,drone_yaw1, tree_pos1) - 0.5)  + 0.5
+    y_single = 0.5 * ca.fabs(ca.cos(drone_yaw1)) + 0.5
     F_single = ca.Function('F_single', [drone_pos1, drone_yaw1, tree_pos1], [y_single])
 
     #   map the function
@@ -31,7 +29,7 @@ def g_map_cond_casadi(  f,
     # Apply the if-else condition element-wise
     result = ca.if_else(condition, F_mapped(drone_pos_sym, drone_yaw_sym, tree_lambda_sym.T).T, 0.5)
 
-    return ca.Function('F_final', [drone_pos_sym, drone_yaw_sym, tree_lambda_sym, condition], [result])
+    return F_mapped
 
 def g_map_casadi_rt(l4c_model_order2, params_x_robot_tree_tree_lambda):
         drone_pos1 = ca.MX.sym('drone_pos', 2)
@@ -59,27 +57,23 @@ def g_map_casadi_rt(l4c_model_order2, params_x_robot_tree_tree_lambda):
         return ca.Function('F_final', [drone_pos1, drone_yaw1, tree_lambda_sym, tree_param_lambda_sym], [y_all])
 
 def g_map_casadi(l4c_model, x_trees):
-        drone_pos1 = ca.MX.sym('drone_pos', 2)
+        drone_state1 = ca.MX.sym('drone_pos', 3)
         tree_pos1 = ca.MX.sym('tree_pos_single', 2)
-        drone_yaw1 = ca.MX.sym('drone_yaw', 1)
-
-        phi = ca.atan2(drone_pos1[1]-tree_pos1[1], drone_pos1[0]-tree_pos1[0])  + np.pi/2
-        
+ 
         # Second-order Taylor (Quadratic) approximation of the model as Casadi Function
-        casadi_quad_approx_sym_out = l4c_model(ca.vertcat(ca.power(ca.sum1(ca.power(drone_pos1-tree_pos1, 2)),(1./2)),
-                                                                ca.fmod(phi + 2 * np.pi, 2 * np.pi),
-                                                                np.mod(phi - drone_yaw1 + np.pi + np.pi/2, 2 * np.pi)))
+        casadi_quad_approx_sym_out = l4c_model(ca.vertcat(  drone_state1[:2]-tree_pos1,
+                                                            drone_state1[-1]))
         f = ca.Function('F_single',
-                        [drone_pos1, drone_yaw1, tree_pos1],
+                        [drone_state1, tree_pos1],
                         [casadi_quad_approx_sym_out])
 
         F_mapped = f.map(x_trees.shape[0])
         tree_lambda_sym = ca.MX.sym('trees_lambda', x_trees.shape[0], 2)
 
         # Use mapped function
-        y_all = F_mapped(drone_pos1, drone_yaw1, tree_lambda_sym.T).T
+        y_all = F_mapped(drone_state1, tree_lambda_sym.T).T
 
-        return ca.Function('F_final', [drone_pos1, drone_yaw1, tree_lambda_sym], [y_all])
+        return ca.Function('F_final', [drone_state1, tree_lambda_sym], [y_all])
 
 def setup_g_inline_casadi(f, cond= False):
     drone_pos1 = ca.MX.sym('drone_pos', 2)

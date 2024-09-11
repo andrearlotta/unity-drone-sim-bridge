@@ -1,4 +1,4 @@
-from unity_drone_sim_bridge.g_func_lib.g_func_tools import load_g
+from unity_drone_sim_bridge.surrogate_lib.surrogate_func_tools import load_g
 from unity_drone_sim_bridge.examples.sitl.fixed_order_system.template_model import template_model
 from unity_drone_sim_bridge.examples.sitl.fixed_order_system.template_mpc import template_mpc
 from unity_drone_sim_bridge.examples.sitl.fixed_order_system.template_simulator import Simulator
