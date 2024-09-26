@@ -47,7 +47,7 @@ def setup(x0, Fmax, N_horizon, Tf):
                synthetic=True,
                hidden_layer=2,
                hidden_size=64, 
-               use_yolo=True)
+               n_inputs=3)
 
     model = export_model(g)
     nx = model.x.rows()

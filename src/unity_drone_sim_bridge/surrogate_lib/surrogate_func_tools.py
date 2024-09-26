@@ -57,23 +57,23 @@ def g_map_casadi_rt(l4c_model_order2, params_x_robot_tree_tree_lambda):
         return ca.Function('F_final', [drone_pos1, drone_yaw1, tree_lambda_sym, tree_param_lambda_sym], [y_all])
 
 def g_map_casadi(l4c_model, x_trees):
-        drone_state1 = ca.MX.sym('drone_pos', 3)
-        tree_pos1 = ca.MX.sym('tree_pos_single', 2)
- 
-        # Second-order Taylor (Quadratic) approximation of the model as Casadi Function
-        casadi_quad_approx_sym_out = l4c_model(ca.vertcat(  drone_state1[:2]-tree_pos1,
-                                                            drone_state1[-1]))
-        f = ca.Function('F_single',
-                        [drone_state1, tree_pos1],
-                        [casadi_quad_approx_sym_out])
+    drone_state1 = ca.MX.sym('drone_pos', 3)
+    tree_pos1 = ca.MX.sym('tree_pos_single', 2)
 
-        F_mapped = f.map(x_trees.shape[0])
-        tree_lambda_sym = ca.MX.sym('trees_lambda', x_trees.shape[0], 2)
+    # Second-order Taylor (Quadratic) approximation of the model as Casadi Function
+    casadi_quad_approx_sym_out = l4c_model(ca.vertcat(  drone_state1[:2]-tree_pos1,
+                                                        drone_state1[-1]))
+    f = ca.Function('F_single',
+                    [drone_state1, tree_pos1],
+                    [casadi_quad_approx_sym_out])
 
-        # Use mapped function
-        y_all = F_mapped(drone_state1, tree_lambda_sym.T).T
+    F_mapped = f.map(x_trees.shape[0])
+    tree_lambda_sym = ca.MX.sym('trees_lambda', x_trees.shape[0], 2)
 
-        return ca.Function('F_final', [drone_state1, tree_lambda_sym], [y_all])
+    # Use mapped function
+    y_all = F_mapped(drone_state1, tree_lambda_sym.T).T
+
+    return ca.Function('F_final', [drone_state1, tree_lambda_sym], [y_all])
 
 def setup_g_inline_casadi(f, cond= False):
     drone_pos1 = ca.MX.sym('drone_pos', 2)
@@ -136,9 +136,9 @@ def g_map_casadi_fixed_cond(F_single, x_trees_dim, cond_=None):
 setup g functions tools
 '''
 
-def load_g(mode='gp', hidden_size=64, hidden_layer=2, synthetic=True, rt=False, gpu=True, use_yolo=True, naive=False):
+def load_g(mode='gp', hidden_size=64, hidden_layer=2, synthetic=True, rt=False, gpu=True, n_inputs=3):
     if  mode == 'mlp':
-        mlp = LoadNN(hidden_size,hidden_layer, synthetic=synthetic, rt=rt, gpu=gpu, use_yolo=use_yolo, naive=naive)
+        mlp, _ = LoadNN(hidden_size,hidden_layer, synthetic=synthetic, rt=rt, gpu=gpu, n_inputs=n_inputs)
         return mlp
     elif mode == 'gp':
         gp =  load_ca_gp(synthetic=synthetic)

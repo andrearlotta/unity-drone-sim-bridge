@@ -234,7 +234,7 @@ def run():
                                    synthetic=True,
                                    hidden_layer=2,
                                    hidden_size=64,
-                                   use_yolo=True)
+                                   n_inputs=3)
 
     model = UnicycleWithLearnedDynamics(learned_dyn_model)
     solver = MPC(model=model.model(), N=N,

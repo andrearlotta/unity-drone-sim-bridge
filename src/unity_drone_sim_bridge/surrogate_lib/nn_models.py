@@ -1,6 +1,22 @@
 import torch.nn as nn
 from abc import ABC, abstractmethod
 import torch
+import os
+import re
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters())
+
+class SunDataset(torch.utils.data.Dataset):
+    def __init__(self, x, y):
+        self.x = torch.tensor(x, dtype=torch.float32)
+        self.y = torch.tensor(y, dtype=torch.float32)
+
+    def __len__(self):
+        return len(self.x)
+
+    def __getitem__(self, idx):
+        return self.x[idx], self.y[idx]
 
 # Base Neural Network Class
 class BaseNN(nn.Module, ABC):
@@ -21,14 +37,14 @@ class SimpleNetwork(BaseNN):
         return 0.5 * (torch.sigmoid(self.fc(x)) + 0.5)
 
 class AlternativeSurrogateNetwork(nn.Module):
-    def __init__(self, use_yolo, hidden_size, num_hidden_layers):
+    def __init__(self, n_input, hidden_size, num_hidden_layers):
         super(AlternativeSurrogateNetwork, self).__init__()
-        self.use_yolo = use_yolo
+        self.n_input = n_input
         self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
 
         layers = []
-        input_size = 3 if use_yolo else 1
+        input_size = n_input
 
         # Input layer
         layers.append(nn.Linear(input_size, hidden_size))
@@ -51,14 +67,14 @@ class AlternativeSurrogateNetwork(nn.Module):
 
 
 class SurrogateNetworkFixedOutput(nn.Module):
-    def __init__(self, use_yolo, hidden_size, num_hidden_layers):
+    def __init__(self, n_input, hidden_size, num_hidden_layers):
         super(SurrogateNetworkFixedOutput, self).__init__()
-        self.use_yolo = use_yolo
+        self.n_input = n_input
         self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
 
         layers = []
-        input_size = 3 if use_yolo else 1
+        input_size = n_input
 
         # Input layer
         layers.append(nn.Linear(input_size, hidden_size))
@@ -68,6 +84,7 @@ class SurrogateNetworkFixedOutput(nn.Module):
         for _ in range(num_hidden_layers):
             layers.append(nn.Linear(hidden_size, hidden_size))
             layers.append(nn.ReLU())
+            layers.append(nn.Dropout(p=0.5)) 
 
         # Output layer
         layers.append(nn.Linear(hidden_size, 1))
@@ -87,14 +104,14 @@ class SurrogateNetworkFixedOutput(nn.Module):
         return output
     
 class SurrogateNetwork(nn.Module):
-    def __init__(self, use_yolo, hidden_size, num_hidden_layers):
+    def __init__(self, n_input, hidden_size, num_hidden_layers):
         super(SurrogateNetwork, self).__init__()
-        self.use_yolo = use_yolo
+        self.n_input = n_input
         self.hidden_size = hidden_size
         self.num_hidden_layers = num_hidden_layers
 
         layers = []
-        input_size = 3 if use_yolo else 1
+        input_size = n_input
 
         # Input layer
         layers.append(nn.Linear(input_size, hidden_size))
@@ -114,3 +131,11 @@ class SurrogateNetwork(nn.Module):
         output = self.network(x)
         # Scale the sigmoid output to the range [0.5, 1.0]
         return output
+
+def find_best_model_with_highest_epoch(folder_path):
+    pattern = re.compile(r'best_model_epoch_(\d+)\.ckpt')
+    return max(
+        (os.path.join(folder_path, f) for f in os.listdir(folder_path) if pattern.match(f)),
+        key=lambda f: int(pattern.search(f).group(1)),
+        default=None
+    )

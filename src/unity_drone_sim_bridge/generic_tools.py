@@ -4,6 +4,40 @@ import numpy as np
 '''
 generic tools
 '''
+def drone_trees_distances_np(drone_pos, tree_pos):
+    # Calculate distance between the drone and each tree
+    return np.sqrt(np.sum((tree_pos - np.ones((tree_pos.shape[0], 1)) @ drone_pos.reshape(1, -1)) ** 2, axis=1))
+
+def gaussian_np(x, mu, sig=1/np.sqrt(2*np.pi), norm=True):
+    a = 1 if not norm else (sig * np.sqrt(2 * np.pi))
+    return a * (1.0 / (np.sqrt(2.0 * np.pi) * sig) * np.exp(-np.power((x - mu) / sig, 2.0) / 2))
+
+def sigmoid_np(x, alpha=10.0):
+    return 1 / (1 + np.exp(-alpha * x))
+
+def sig_np(x, thresh=6, delta=0.5, alpha=10.0):
+    x_min = thresh - delta
+    x_max = thresh + delta
+    y_min = 0.0
+    y_max = 1.0
+    
+    normalized_x = ((x - x_min) - (x_max - x_min) / 2) / (x_max - x_min)
+    normalized_y = sigmoid_np(normalized_x, alpha)
+    mapped_y = y_min + (normalized_y * (y_max - y_min))
+    
+    return mapped_y
+
+def trees_satisfy_conditions_np(drone_pos, drone_yaw, tree_pos, thresh_distance=5):
+    n_trees = tree_pos.shape[0]
+    # Calculate distance between the drone and each tree
+    distances = drone_trees_distances_np(drone_pos, tree_pos)
+    # Calculate direction from drone to each tree
+    drone_dir = np.vstack((np.cos(drone_yaw), np.sin(drone_yaw)))
+    
+    tree_directions = tree_pos - np.tile(drone_pos, (n_trees, 1))  # Correct broadcasting
+    vect_alignment = np.sum(tree_directions / np.linalg.norm(tree_directions, axis=1, keepdims=True) * drone_dir.T, axis=1)
+    
+    return sig_np(vect_alignment, thresh=0.8, delta=0.5, alpha=1) * gaussian_np(distances, mu=thresh_distance, sig=2.5) * sig_np(np.abs(np.arctan2(drone_pos[1], drone_pos[0])), thresh=0.8, delta=0.5, alpha=1)
 
 def drone_objects_distances_casadi(drone_pos_sym, objects_pos_sym, ray=0.0):
     # Calculate distance between the drone and each object
@@ -22,15 +56,6 @@ def gaussian_ca(x, mu, sigma=1/ca.sqrt(2*ca.pi), norm=True):
     return a * (
         1.0 / (ca.sqrt(2.0 * ca.pi) * sigma) * ca.exp(-ca.power((x - mu) / sigma, 2.0) / 2)
     )
-
-def gaussian_np(x, mu, sigma=1/ca.sqrt(2*ca.pi), norm=True):
-    a = 1 if not norm else (sigma*ca.sqrt(2*ca.pi)) 
-    return a * (
-        1.0 / (np.sqrt(2.0 * ca.pi) * sigma) * np.exp(-np.power((x - mu) / sigma, 2.0) / 2)
-    )
-
-def sigmoid_np(x, alpha=10.0):
-    return 1 / (1 + np.exp(-alpha*x))
 
 def norm_sigmoid_np(x, thresh = 6, delta = 0.5, alpha = 10.0):
     x_min = thresh - delta

@@ -46,7 +46,7 @@ def template_model(dim_lambda=1, dim_obs=1, symvar_type='MX', g=None, rt=False):
     model.set_expression('H', H)
     model.set_expression('H_prev', H_prev)
     model.set_expression('y', y_expr)
-    model.set_expression('cost_function', - lambda_)
+    model.set_expression('cost_function', -(H - H_prev) )
 
     # Set RHS
     model.set_rhs('x_robot', x_robot + u_x_robot)
@@ -56,4 +56,4 @@ def template_model(dim_lambda=1, dim_obs=1, symvar_type='MX', g=None, rt=False):
 
     model.setup()
 
-    return model    
+    return model

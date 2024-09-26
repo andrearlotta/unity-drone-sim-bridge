@@ -12,7 +12,7 @@ MIN_DISTANCE = 1.5  # Minimum distance from drone to any tree in meters
 
 def run_simulation(g_function = 'gp', simulation_steps= 100, rt=True, gpu=True):
     dim_lambda = 4 #2**simulation_steps
-    g=load_g(g_function, rt=rt, gpu=gpu, synthetic=False, hidden_layer=2,hidden_size=64, use_yolo=True)
+    g=load_g(g_function, rt=rt, gpu=gpu, synthetic=False, hidden_layer=2,hidden_size=64, n_inputs=3)
     model = template_model(g=g,dim_lambda=dim_lambda)
     simulator = Simulator(model,
                           dim_lambda=dim_lambda,

@@ -1,17 +1,11 @@
 import os
-import re
 import csv
-import random
 import numpy as np
-import torch
+import torch as torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.nn.functional as F
 import tensorflow as tf
-import casadi as ca
 import l4casadi as l4c
-import matplotlib.pyplot as plt
-import plotly.graph_objects as go
 import plotly.io as pio
 import wandb
 
@@ -19,43 +13,39 @@ from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
 from typing import List, Dict, Any
 
-from unity_drone_sim_bridge.surrogate_lib.load_database import load_cartesian_surrogate_database, load_polar_surrogate_database, generate_surrogate_synthetic_data, generate_fake_cartesian_dataset, generate_fake_polar_dataset
+from unity_drone_sim_bridge.surrogate_lib.load_database import *
 from unity_drone_sim_bridge.surrogate_lib.nn_models import *
+from unity_drone_sim_bridge.surrogate_lib.plot_tools import *
 
 # TensorFlow configuration
 config = tf.compat.v1.ConfigProto()
 config.gpu_options.allow_growth = True
 session = tf.compat.v1.Session(config=config)
 
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters())
-
-class SunDataset(torch.utils.data.Dataset):
-    def __init__(self, x, y):
-        self.x = torch.tensor(x, dtype=torch.float32)
-        self.y = torch.tensor(y, dtype=torch.float32)
-
-    def __len__(self):
-        return len(self.x)
-
-    def __getitem__(self, idx):
-        return self.x[idx], self.y[idx]
-
-def LoadNN(hidden_size, hidden_layer, test_size=0.2, synthetic=False, rt=False, gpu=False, naive=False, use_yolo=True, cartesian=True):
-    EXPERIMENT_NAME = "cartesian_SurrogateNetworkFixedOutput_hs64_hl2_lr0_001_e500_bs1_ts0_2_synTrue"
-    #f"simple_mlp_hiddensize{hidden_size}_hiddenlayers{hidden_layer}_data{int(test_size*10)}" if not use_yolo else f"surrogate_model_hiddensize{hidden_size}_hiddenlayers{hidden_layer}"
+def LoadNN(hidden_size, hidden_layer, test_size=0.2, synthetic=False, rt=False, gpu=False, n_inputs=3, cartesian=True):
+    """
+    Carica una rete neurale già allenata (SurrogateNetworkFixedOutput)
+    """
+    model_name = 'SurrogateNetworkFixedOutput'
+    lr = 0.0001
+    epochs = 1000
+    batch_size = 2
+    test_size = 0.3
+    augmentation = False
+    EXPERIMENT_NAME = f"{'cartesian' if cartesian else 'polar'}_{model_name}_in_{n_inputs}_hs{hidden_size}_hl{hidden_layer}_lr{lr}_e{epochs}_bs{batch_size}_ts{test_size}_syn{synthetic}_augmentation{augmentation}".replace(".", "_")
+    EXPERIMENT_NAME = "cartesian_SurrogateNetworkFixedOutput_in_3_hs16_hl2_lr0_0001_e1000_bs2_ts0_3_synFalse_augmentationFalse"
     CHECKPOINT_PATH = find_best_model_with_highest_epoch(f"/home/pantheon/mpc-drone/checkpoints/{EXPERIMENT_NAME}")
-    
-    model = SurrogateNetworkFixedOutput(True, hidden_size, hidden_layer)
+
+    model = SurrogateNetworkFixedOutput(n_inputs, hidden_size, hidden_layer)
     model.load_state_dict(torch.load(CHECKPOINT_PATH))
     model.eval()
 
     print(f"Loading model from {CHECKPOINT_PATH}")
+    print(f"Number of parameters: {count_parameters(model)}")
 
-    print(count_parameters(model))
     return l4c.realtime.realtime_l4casadi.RealTimeL4CasADi(model, approximation_order=2, device="cuda" if gpu else "cpu") \
         if rt else \
-            l4c.L4CasADi(model, model_expects_batch_dim=True, device="cuda" if gpu else "cpu"), model
+        l4c.L4CasADi(model, model_expects_batch_dim=True, device="cuda" if gpu else "cpu"), model
 
 def train_model(X, Y, model, train_loader, val_loader, criterion, optimizer, num_epochs, device, checkpoint_path):
     best_val_loss = float('inf')
@@ -99,7 +89,7 @@ def train_model(X, Y, model, train_loader, val_loader, criterion, optimizer, num
                 print(f"Model saved at epoch {epoch+1}")
                 model(torch.tensor(X, dtype=torch.float32).to(device)).cpu().numpy().flatten()
 
-                pio.write_html(create_3d_plot(X, Y, model(torch.tensor(X, dtype=torch.float32).to(device)).cpu().numpy().flatten(), checkpoint_path,  polar=(exp['dataset_type'] == 'polar')), f'plots/{checkpoint_path}_3d_plot.html')
+                pio.write_html(create_3d_plot(X, Y, model(torch.tensor(X, dtype=torch.float32).to(device)).cpu().numpy().flatten(), checkpoint_path, is_polar=(exp['dataset_type'] == 'polar')), f'plots/{checkpoint_path}_3d_plot.html')
                 wandb.log({'Predictions': wandb.Html(f'plots/{checkpoint_path}_3d_plot.html'), 'epoch': epoch})
                 os.remove(f'plots/{checkpoint_path}_3d_plot.html')
         
@@ -112,7 +102,7 @@ def run_training_experiments(experiments: List[Dict[str, Any]]) -> None:
     fieldnames = [
         'name', 'model', 'best_val_loss', 'test_loss', 'best_model_path',
         'hidden_size', 'hidden_layers', 'learning_rate', 'num_epochs',
-        'batch_size', 'test_size', 'synthetic'
+        'batch_size', 'test_size', 'synthetic', 'dataset_type', 'n_input', 'augmentation'
     ]
 
     with open(results_file, 'w', newline='') as csvfile:
@@ -122,15 +112,17 @@ def run_training_experiments(experiments: List[Dict[str, Any]]) -> None:
     for exp in experiments:
         print(f"Running experiment: {exp['name']}")
         
-        # Data preparation
-        X, Y = generate_fake_cartesian_dataset(10000)
-        #if exp['synthetic']:
-        #synthetic_X, synthetic_Y = generate_surrogate_synthetic_data(X, int(0.5 * len(X)))
-        #X = np.vstack((X, synthetic_X))
-        #Y = np.hstack((Y, synthetic_Y))
+        if exp['synthetic']:
+            X, Y = generate_fake_dataset(10000, is_polar= exp['dataset_type'] == 'polar', n_input=exp["n_input"])
+        else:
+            X, Y = load_surrogate_database(exp['dataset_type'] == 'polar', exp['n_input'], test_size=0.6)
+        if exp['augmentation']:
+            augmentation_X, augmentation_Y = generate_surrogate_augmented_data(X, int(0.2 * len(X)), exp['dataset_type'] == 'polar', n_input=exp["n_input"])
+            X = np.vstack((X, augmentation_X))
+            Y = np.hstack((Y, augmentation_Y))
 
         x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=exp['test_size'], shuffle=True)
-        x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=0.2, shuffle=True)
+        x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=exp['test_size'], shuffle=True)
 
         train_dataset = SunDataset(x_train, y_train)
         val_dataset = SunDataset(x_val, y_val)
@@ -150,19 +142,21 @@ def run_training_experiments(experiments: List[Dict[str, Any]]) -> None:
         else:
             raise ValueError(f"Unknown model type: {exp['model']}")
 
-        model = SimpleNetwork() if exp['model'] == 'SimpleNetwork' else model(exp['use_yolo'], exp['hidden_size'], exp['hidden_layers'])
+        model = SimpleNetwork() if exp['model'] == 'SimpleNetwork' else model(exp['n_input'], exp['hidden_size'], exp['hidden_layers'])
         
         criterion = nn.MSELoss()
-        optimizer = optim.Adam(model.parameters(), lr=exp['learning_rate'])
+        optimizer = optim.Adam(model.parameters(), lr=exp['learning_rate'], weight_decay=1e-5)
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         model.to(device)
 
         # Initialize wandb run
-        run = wandb.init(project='surrogate_model_training', name=exp['name'], config={
+        run = wandb.init(project='NMPC_surrogate', name=exp['name'], config={
+            'dataset_type': exp['dataset_type'],
             'model': exp['model'],
             'synthetic': exp['synthetic'],
-            'use_yolo': exp['use_yolo'],
+            'augmentation': exp['augmentation'],
+            'n_input': exp['n_input'],
             'test_size': exp['test_size'],
             'learning_rate': exp['learning_rate'],
             'num_epochs': exp['num_epochs'],
@@ -171,9 +165,14 @@ def run_training_experiments(experiments: List[Dict[str, Any]]) -> None:
             'hidden_layers': exp['hidden_layers'],
         })
 
+        """
+            Train
+        """
         best_model_path, best_val_loss = train_model(X, Y, model, train_loader, val_loader, criterion, optimizer, exp['num_epochs'], device, exp['name'])
-
-        # Evaluation
+        
+        """
+            Eval
+        """
         model.load_state_dict(torch.load(best_model_path))
         model.eval()
         test_loss = sum(criterion(model(x.to(device)), y.to(device)).item() for x, y in test_loader) / len(test_loader)
@@ -182,28 +181,32 @@ def run_training_experiments(experiments: List[Dict[str, Any]]) -> None:
         with torch.no_grad():
             y_pred = model(torch.tensor(X, dtype=torch.float32).to(device)).cpu().numpy().flatten()
 
-        # Create and save 3D plot
+        """
+            Create and save 3D plot
+        """
         os.makedirs('plots', exist_ok=True)
-        pio.write_html(create_3d_plot(X, Y, y_pred, exp['name'], polar=(exp['dataset_type'] == 'polar')), file=f"plots/{exp['name']}_3d_plot.html")
+        pio.write_html(create_3d_plot(X, Y, y_pred, exp['name'], is_polar=(exp['dataset_type'] == 'polar')), file=f"plots/{exp['name']}_3d_plot.html")
 
         # Generate 500 random inputs
         random_inputs = np.array([
-            [np.random.uniform(0, 10), np.random.uniform(-np.pi, np.pi), 0]
+            [np.random.uniform(0, 10), np.random.uniform(-np.pi, np.pi), 0] if exp['dataset_type'] == 'polar' else [np.random.uniform(-10, 10), np.random.uniform(-10, 10), 0]
             for _ in range(500)
         ])
+        if exp['n_input'] == 2 :  random_inputs = random_inputs[:,:2]
         random_inputs_tensor = torch.tensor(random_inputs, dtype=torch.float32).to(device)
 
         # Predict using the model
         prediction = model(random_inputs_tensor).detach().cpu().numpy().flatten()
 
-        pio.write_html(create_3d_plot(random_inputs, [], prediction, exp['name'],  polar=(exp['dataset_type'] == 'polar')), f"plots/{exp['name']}_random_3d_plot.html")
+        pio.write_html(create_3d_plot(random_inputs, [], prediction, exp['name'], is_polar=(exp['dataset_type'] == 'polar')), f"plots/{exp['name']}_random_3d_plot.html")
         wandb.log({'Random Test': wandb.Html(f"plots/{exp['name']}_random_3d_plot.html")})
         os.remove(f"plots/{exp['name']}_random_3d_plot.html")
 
         # Write results to CSV
         result = {
             'name': exp['name'],
-            'model': exp['model'],
+            'dataset_type': exp.get('dataset_type','N/A'),
+            'model': exp.get('model','N/A'),
             'best_val_loss': best_val_loss,
             'test_loss': test_loss,
             'best_model_path': best_model_path,
@@ -213,7 +216,8 @@ def run_training_experiments(experiments: List[Dict[str, Any]]) -> None:
             'num_epochs': exp.get('num_epochs', 'N/A'),
             'batch_size': exp.get('batch_size', 'N/A'),
             'test_size': exp.get('test_size', 'N/A'),
-            'synthetic': exp.get('synthetic', 'N/A')
+            'synthetic': exp.get('synthetic', 'N/A'),
+            'augmentation': exp.get('augmentation', 'N/A')
         }
 
         with open(results_file, 'a', newline='') as csvfile:
@@ -223,97 +227,20 @@ def run_training_experiments(experiments: List[Dict[str, Any]]) -> None:
 
     print(f"Results have been saved to {results_file}")
 
-def random_input_test_rt(casadi_quad_approx_func, l4c_model_order2, gpu,):
-
-    # Generate 500 random inputs
-    random_inputs = []
-    prediction = []
-    torch_prediction = []
-    for _ in range(1000):
-        i_ = np.array([[np.random.uniform(0, 10), np.random.uniform(0, 2*np.pi), 0]])
-        p_ = casadi_quad_approx_func(i_.reshape((3, 1)), l4c_model_order2.get_params(i_))
-        print(p_)
-        p_ = p_[0, 0]
-        t_out = model(torch.tensor(i_, dtype=torch.float32).to("cuda" if gpu else "cpu")).detach().cpu().numpy().flatten()
-        random_inputs.append(i_[0])
-        torch_prediction.append(t_out)
-        prediction.append(p_)
-
-    pio.write_html(create_3d_plot(np.array(random_inputs), [], np.array(prediction).flatten(), 'test_l4casasdi',  polar=(exp['dataset_type'] == 'polar')), "test_l4casasdi_random_3d_plot.html")
-    pio.write_html(create_3d_plot(np.array(random_inputs), [], np.array(torch_prediction).flatten(), 'test_l4casasdi',  polar=(exp['dataset_type'] == 'polar')), "test_l4casasdi_torch_random_3d_plot.html")
-
-def random_input_test_std(l4c_model, model, gpu):
-    # Generate 500 random inputs
-    random_inputs = []
-    prediction = []
-    torch_prediction = []
-    x_sym = ca.MX.sym('x', 3, 1)
-    y_sym = l4c_model(x_sym)
-    f = ca.Function('y', [x_sym], [y_sym])
-    for _ in range(1000):
-        i_ = np.array([[np.random.uniform(0, 10), np.random.uniform(0, 2*np.pi), 0]])
-        p_ = f(i_.reshape((3, 1)))
-        print(p_)
-        p_ = p_[0, 0]
-        t_out = model(torch.tensor(i_, dtype=torch.float32).to("cuda" if gpu else "cpu")).detach().cpu().numpy().flatten()
-        random_inputs.append(i_[0])
-        torch_prediction.append(t_out)
-        prediction.append(p_)
-
-    pio.write_html(create_3d_plot(np.array(random_inputs), [], np.array(prediction).flatten(), 'test_l4casasdi',  polar=(exp['dataset_type'] == 'polar')),       "test_l4casasdi_random_3d_plot.html")
-    pio.write_html(create_3d_plot(np.array(random_inputs), [], np.array(torch_prediction).flatten(), 'test_l4casasdi',  polar=(exp['dataset_type'] == 'polar')), "test_l4casasdi_torch_random_3d_plot.html")
-
-def create_3d_plot(X_combined, Y_combined, y_pred, exp_name, polar= False):
-    fig = go.Figure()
-    if len(Y_combined):
-        fig.add_scatter3d(
-            x=X_combined[:, 0] * np.cos(X_combined[:, 1]) if polar else X_combined[:, 0],
-            y=X_combined[:, 0] * np.sin(X_combined[:, 1]) if polar else X_combined[:, 1],
-            z=Y_combined,
-            mode='markers',
-            marker=dict(size=5, opacity=0.8),
-            name="True"
-        )
-    fig.add_scatter3d(
-        x=X_combined[:, 0] * np.cos(X_combined[:, 1]) if polar else X_combined[:, 0],
-        y=X_combined[:, 0] * np.sin(X_combined[:, 1]) if polar else X_combined[:, 1],
-        z=y_pred,
-        mode='markers',
-        marker=dict(size=5, opacity=0.8) if len(Y_combined) else dict(size=5, opacity=0.8, color=y_pred, colorscale='Viridis'),
-        name="Predicted"
-    )
-    fig.update_layout(
-        title=f'3D Scatter Plot of Values - {exp_name}',
-        scene=dict(
-            xaxis_title='X Coordinate',
-            yaxis_title='Y Coordinate',
-            zaxis_title='Conf Value'
-        ),
-        legend_title="Dataset"
-    )
-    return fig
-
-def find_best_model_with_highest_epoch(folder_path):
-    pattern = re.compile(r'best_model_epoch_(\d+)\.ckpt')
-    return max(
-        (os.path.join(folder_path, f) for f in os.listdir(folder_path) if pattern.match(f)),
-        key=lambda f: int(pattern.search(f).group(1)),
-        default=None
-    )
-
 # Main execution
 if __name__ == '__main__':
     # Initialize wandb
     wandb.login()
-    models = ['SurrogateNetworkFixedOutput']
-    synthetic_options = [True]
-    use_yolo_options = [True]
+    models = ['AlternativeSurrogateNetwork']
+    synthetic_options = [False]
+    augmentation_options = [True]
+    n_input_options = [2]
     test_sizes = [0.2]
-    learning_rates = [1e-3]
-    num_epochs_options = [500]
-    batch_sizes = [1]
-    hidden_sizes = [64]
-    hidden_layers = [2]
+    learning_rates = [1e-5]  # Reduce learning rate
+    batch_sizes = [1]  # Larger batch size
+    num_epochs_options = [250]  # Increase the number of epochs, but use early stopping
+    hidden_sizes = [16]
+    hidden_layers = [3]
     dataset_types = ['cartesian']
 
     experiments = []
@@ -322,28 +249,30 @@ if __name__ == '__main__':
     for dataset_type in dataset_types:
         for model in models:
             for synthetic in synthetic_options:
-                for use_yolo in use_yolo_options:
-                    for test_size in test_sizes:
-                        for lr in learning_rates:
-                            for epochs in num_epochs_options:
-                                for batch_size in batch_sizes:
-                                    for hidden_size in hidden_sizes:
-                                        for hidden_layer in hidden_layers:
-                                            exp = {
-                                                'name': f'{dataset_type}_{model}_hs{hidden_size}_hl{hidden_layer}_lr{lr}_e{epochs}_bs{batch_size}_ts{test_size}_syn{synthetic}'.replace(".", "_"),
-                                                'model': model,
-                                                'synthetic': synthetic,
-                                                'use_yolo': use_yolo,
-                                                'test_size': test_size,
-                                                'learning_rate': lr,
-                                                'num_epochs': epochs,
-                                                'batch_size': batch_size,
-                                                'hidden_size': hidden_size,
-                                                'hidden_layers': hidden_layer,
-                                                'dataset_type' : dataset_type
-                                            }
-                                            experiments.append(exp)
-                                            exp_counter += 1
+                for augmentation in augmentation_options:
+                    for n_input in n_input_options:
+                        for test_size in test_sizes:
+                            for lr in learning_rates:
+                                for epochs in num_epochs_options:
+                                    for batch_size in batch_sizes:
+                                        for hidden_size in hidden_sizes:
+                                            for hidden_layer in hidden_layers:
+                                                exp = {
+                                                    'name': f'{dataset_type}_{model}_in_{n_input}_hs{hidden_size}_hl{hidden_layer}_lr{lr}_e{epochs}_bs{batch_size}_ts{test_size}_syn{synthetic}_augmentation{augmentation}'.replace(".", "_"),
+                                                    'model': model,
+                                                    'dataset_type': dataset_type,
+                                                    'synthetic': synthetic,
+                                                    'augmentation': augmentation,
+                                                    'n_input': n_input,
+                                                    'test_size': test_size,
+                                                    'learning_rate': lr,
+                                                    'num_epochs': epochs,
+                                                    'batch_size': batch_size,
+                                                    'hidden_size': hidden_size,
+                                                    'hidden_layers': hidden_layer
+                                                }
+                                                experiments.append(exp)
+                                                exp_counter += 1
 
     for i, exp in enumerate(experiments[:5]):
         print(f"Experiment {i+1}:")

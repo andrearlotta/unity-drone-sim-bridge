@@ -51,7 +51,7 @@ class SurrogateNetwork(nn.Module):
         # Scale the sigmoid output to the range [0.5, 1.0]
         return output
 
-def LoadNN(hidden_size, hidden_layer, test_size=0.2, use_yolo=False):
+def LoadNN(hidden_size, hidden_layer, test_size=0.2, n_inputs=3):
     EXPERIMENT_NAME = f"surrogate_model_hiddensize{hidden_size}_hiddenlayers{hidden_layer}"
     model = SurrogateNetwork(True, hidden_size, hidden_layer,)
     

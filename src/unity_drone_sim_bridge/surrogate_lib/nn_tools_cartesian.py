@@ -41,7 +41,7 @@ class SunDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         return self.x[idx], self.y[idx]
 
-def LoadNN(hidden_size, hidden_layer, test_size=0.2, synthetic=False, rt=False, gpu=False, naive=False, use_yolo=True):
+def LoadNN(hidden_size, hidden_layer, test_size=0.2, synthetic=False, rt=False, gpu=False, naive=False, n_inputs=3):
     EXPERIMENT_NAME = "SurrogateNetworkFixedOutput_hs64_hl2_lr0_001_e100_bs1_ts0_2_synFalse"
     #f"simple_mlp_hiddensize{hidden_size}_hiddenlayers{hidden_layer}_data{int(test_size*10)}" if not use_yolo else f"surrogate_model_hiddensize{hidden_size}_hiddenlayers{hidden_layer}"
     CHECKPOINT_PATH = find_best_model_with_highest_epoch(f"/home/pantheon/mpc-drone/checkpoints/{EXPERIMENT_NAME}")

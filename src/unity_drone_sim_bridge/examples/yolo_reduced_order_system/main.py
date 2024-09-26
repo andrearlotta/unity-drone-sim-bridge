@@ -14,7 +14,7 @@ def run_simulation(g_function = 'mlp', simulation_steps= 10, rt=False, gpu=False
              synthetic=False,
              hidden_layer=2,
              hidden_size=64, 
-             use_yolo=use_yolo)
+             n_inputs=n_inputs)
     
     model = template_model(g=g, 
                            dim_lambda=4)

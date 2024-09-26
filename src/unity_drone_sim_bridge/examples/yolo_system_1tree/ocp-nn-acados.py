@@ -46,7 +46,7 @@ l4casadiNN = load_g('mlp',
             synthetic=True,
             hidden_layer=2,
             hidden_size=64, 
-            use_yolo=True)
+            n_inputs=3)
 
 
 # Create the model object for ACADOS

@@ -38,24 +38,23 @@ def template_mpc(model,g, get_nn_input, silence_solver = False, rt=False):
     mpc = do_mpc.controller.MPC(model)
 
     setup_mpc = {
-        'n_horizon': 10,
-        'open_loop': 0,
-        't_step': 0.6,
+        'n_horizon': 20,
+        'open_loop': 1,
+        't_step': 0.2,
         #'collocation_deg': 10,
         #'collocation_ni': 10,
         'store_full_solution': True,
         # Use MA27 linear solver in ipopt for faster calculations:
-        'nlpsol_opts': {#'ipopt.linear_solver': 'ma27',
-                        "ipopt.max_iter": 150,
-                        "ipopt.tol": 10e-3, #default 10e-8
-                        #"ipopt.warm_start_init_point"       :   "yes",
-                        #"ipopt.warm_start_same_structure"   :   "yes",
-                        #"ipopt.jacobian_approximation"       :   "finite-difference-values",
-                        #"ipopt.gradient_approximation"       :   "finite-difference-values",
-                        #"ipopt.hessian_approximation"        :   "limited-memory" 
-                        }
+        'nlpsol_opts': {
+                "ipopt.linear_solver": "ma27",
+                #"ipopt.sb": "yes",
+                "ipopt.max_iter": 1000,
+                "ipopt.acceptable_tol": 1e-3,
+                "ipopt.tol": 1e-4,
+                "ipopt.print_level": 5,
+                "print_time": False,
 
-    
+            }
     }
 
     mpc.set_param(**setup_mpc)
@@ -69,11 +68,11 @@ def template_mpc(model,g, get_nn_input, silence_solver = False, rt=False):
 
 
     mpc.set_objective(mterm=mterm, lterm=lterm)
-    #mpc.set_rterm(x_robot_set=np.array(3*[1e-3]))
+    #mpc.set_rterm(x_robot_set=np.array(2*[1e-3]+[1e-5]))
 
 
-    mpc.bounds['lower','_u','x_robot_set'] = 2 * [-.5] + [-np.pi/30]
-    mpc.bounds['upper','_u','x_robot_set'] = 2 * [+.5] + [+np.pi/30]
+    mpc.bounds['lower','_u','x_robot_set'] = 2 * [-.6] + [-np.pi/4]
+    mpc.bounds['upper','_u','x_robot_set'] = 2 * [+.6] + [+np.pi/4]
     
     # Avoid the obstacles:
     #mpc.set_nl_cons('obstacles', -model.aux['obstacle_distance'], 0)
