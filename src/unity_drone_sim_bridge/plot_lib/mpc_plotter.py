@@ -1,4 +1,7 @@
 
+"""
+    Process or task plotter: lambda, H, position of the robot, predictions...
+"""
 from do_mpc.data import save_results, load_results
 from matplotlib.animation import FuncAnimation, FFMpegWriter, ImageMagickWriter
 import matplotlib.pyplot as plt
@@ -39,7 +42,7 @@ class MPCPlotter:
         self.tree_dim = None
 
     def plot_saved_data(self):
-        for i in range(len(self.mpc.data['_x', 'Xrobot'])):
+        for i in range(len(self.mpc.data['_x', 'x_robot'])):
             self.plot(l=i)
     
     def plot(self, l=-1, online= True):
@@ -65,10 +68,10 @@ class MPCPlotter:
         if online: plt.pause(0.01)  # Pause to update the plot in the loop
 
     def plot_robot_position(self, l = -1):
-        x_pred, y_pred, yaw_pred = self.mpc.data.prediction(('_x', 'Xrobot'),l-1)
-        x = self.mpc.data['_x', 'Xrobot'][:l, 0]
-        y = self.mpc.data['_x', 'Xrobot'][:l, 1]
-        yaw = self.mpc.data['_x', 'Xrobot'][:l, 2]
+        x_pred, y_pred, yaw_pred = self.mpc.data.prediction(('_x', 'x_robot'),l-1)
+        x = self.mpc.data['_x', 'x_robot'][:l, 0]
+        y = self.mpc.data['_x', 'x_robot'][:l, 1]
+        yaw = self.mpc.data['_x', 'x_robot'][:l, 2]
 
         self.ax_2d.plot(x, y, marker='o', linestyle='-', color='b', label='Robot Path')
         self.ax_2d.plot(x_pred, y_pred, marker='o', linestyle='-', color='r', label='Predicted Path')
@@ -134,7 +137,7 @@ class MPCPlotter:
 
     def save_plot_as_gif(self, filename='plot.gif', interval=100, frames=None):
         if frames is None:
-            frames = len(self.mpc.data['_x', 'Xrobot'])
+            frames = len(self.mpc.data['_x', 'x_robot'])
 
         # Define a function to update the plot for each frame
         def update(frame):
@@ -146,7 +149,21 @@ class MPCPlotter:
 
         # Save the animation as a GIF
         ani.save(filename, writer='pillow')
+        
+    def save_plot_as_mp4(self, filename='plot.mp4', interval=100, frames=None):
+        if frames is None:
+            frames = len(self.mpc.data['_x', 'x_robot'])
 
+        # Define a function to update the plot for each frame
+        def update(frame):
+            self.plot_robot_position(frame)
+            self.plot_prediction_table(frame)
+
+        # Create animation using FuncAnimation
+        ani = FuncAnimation(self.fig, update, frames=frames, interval=interval)
+
+        # Save the animation as an MP4
+        ani.save(filename, writer='ffmpeg')
 
 import tkinter as tk
 from tkinter import ttk
@@ -168,7 +185,7 @@ class MPCGUI:
         
         self.plot_frame()
 
-        self.frame_slider = ttk.Scale(master, from_=0, to=len(self.mpc_plotter.mpc.data['_x', 'Xrobot']) - 1, orient=tk.HORIZONTAL, command=self.on_slider_move)
+        self.frame_slider = ttk.Scale(master, from_=0, to=len(self.mpc_plotter.mpc.data['_x', 'x_robot']) - 1, orient=tk.HORIZONTAL, command=self.on_slider_move)
         self.frame_slider.pack(side=tk.BOTTOM, fill=tk.X)
         self.frame_slider.set(0)
 
@@ -204,20 +221,22 @@ def get_most_recent_file(directory, pattern):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="MPC Data Viewer")
     parser.add_argument('--file_number', type=int, help='The number of the result file to load (e.g., 060 for 060_results.pkl)')
-
     args = parser.parse_args()
     
-    results_directory = 'results'
+    results_directory = '/home/pantheon/.ros/results'
     if args.file_number is not None:
         file_name = f'{args.file_number:03d}_results.pkl'
         file_path = os.path.join(results_directory, file_name)
     else:
         file_path = get_most_recent_file(results_directory, '*_results.pkl')
-
+    print(file_path)
     data = load_results(file_path)
     plotter = MPCPlotter(mpc_data(data))
 
-    root = tk.Tk()
-    root.title("MPC Data Viewer")
-    mpc_gui = MPCGUI(root, plotter)
-    root.mainloop()
+    if False: 
+        plotter.save_plot_as_gif(filename='test.gif')
+    else:
+        root = tk.Tk()
+        root.title("MPC Data Viewer")
+        mpc_gui = MPCGUI(root, plotter)
+        root.mainloop()

@@ -1,0 +1,7 @@
+<launch>
+  <!-- Launch data_association_node.py -->
+  <node name="data_association_node" pkg="unity_drone_sim_bridge" type="data_association_node.py" output="screen"/>
+
+  <!-- Launch main.py -->
+  <node name="main_node" pkg="unity_drone_sim_bridge" type="main.py" output="screen"/>
+</launch>
