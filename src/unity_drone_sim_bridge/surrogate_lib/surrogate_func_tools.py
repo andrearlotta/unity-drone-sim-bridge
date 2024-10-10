@@ -3,102 +3,52 @@ from unity_drone_sim_bridge.surrogate_lib.gp_tools import load_ca_gp
 from unity_drone_sim_bridge.surrogate_lib.nn_tools import LoadNN
 from unity_drone_sim_bridge.generic_tools import *
 import casadi as ca
+import l4casadi as l4c
+'''
+setup g functions tools
+'''
+
+def load_g(mode='gp', hidden_size=16, hidden_layer=2, synthetic=True, rt=False, gpu=True, n_inputs=3):
+    if  mode == 'mlp':
+        mlp = LoadNN(hidden_size,hidden_layer, synthetic=synthetic, rt=rt, gpu=gpu, n_inputs=n_inputs)
+        return l4c.L4CasADi(mlp, batched=True, device="cuda" if gpu else "cpu")
+    elif mode == 'gp':
+        gp =  load_ca_gp(synthetic=synthetic)
+        return lambda drone_pos,drone_yaw, tree_pos_single: g_gp(drone_pos,drone_yaw, tree_pos_single, gp)
+
+def g_gp(drone_pos,drone_yaw, tree_pos_single, gp):
+    return  ca.MX(gp.predict(drone_yaw, [], np.zeros((1,1)))[0])
+
 
 '''
 casadi map tools
 '''
-def g_map_cond_casadi(  f,
-                        trees_pos,
-                        use_yolo =True):
-    drone_pos1 = ca.MX.sym('drone_pos', 2)
-    drone_yaw1 = ca.MX.sym('drone_yaw')
-    tree_pos1  = ca.MX.sym('tree_pos_single',2)
 
-    fov_f = fov_weight_fun_casadi()
-    y_single = 0.5 * ca.fabs(ca.cos(drone_yaw1)) + 0.5
-    F_single = ca.Function('F_single', [drone_pos1, drone_yaw1, tree_pos1], [y_single])
+def g_map_casadi(l4c_model, x_trees, norm=True):
+    """
+    Maps a CasADi function over a set of tree positions.
 
-    #   map the function
-    drone_pos_sym = ca.MX.sym('drone_pos', 2)
-    drone_yaw_sym = ca.MX.sym('drone_yaw')
-    tree_lambda_sym = ca.MX.sym('tree_lambda', (trees_pos.shape))
-    F_mapped = F_single.map(trees_pos.shape[0])
+    Args:
+        l4c_model: CasADi-compatible neural network model.
+        x_trees: Array of tree positions.
 
-    condition = ca.MX.sym('tree_cond', trees_pos.shape[0] )
-    # (drone_objects_distances_casadi(drone_pos,drone_yaw,trees_pos) < 8.0)
-    # Apply the if-else condition element-wise
-    result = ca.if_else(condition, F_mapped(drone_pos_sym, drone_yaw_sym, tree_lambda_sym.T).T, 0.5)
+    Returns:
+        A CasADi function that computes the model output for all tree positions.
+    """
+    drone_state1 = ca.MX.sym('drone_pos', 3,1)
+    wrapped_angle = ca.fmod(drone_state1[-1] + ca.pi, 2 * ca.pi) - ca.pi 
 
-    return F_mapped
+    trees_lambda = ca.MX.sym('trees_lambda', x_trees.shape)
+    difference = ca.repmat(drone_state1[:2].T, trees_lambda.shape[0], 1) - trees_lambda
 
-def g_map_casadi_rt(l4c_model_order2, params_x_robot_tree_tree_lambda):
-        drone_pos1 = ca.MX.sym('drone_pos', 2)
-        tree_pos1 = ca.MX.sym('tree_pos_single', 2)
-        drone_yaw1 = ca.MX.sym('tree_pos_single', 1)
-        params = ca.MX.sym('params', 3)
-        phi = ca.atan2(drone_pos1[1]-tree_pos1[1], drone_pos1[0]-tree_pos1[0])  + np.pi/2
-        
-        # Second-order Taylor (Quadratic) approximation of the model as Casadi Function
-        casadi_quad_approx_sym_out = l4c_model_order2(ca.vertcat(ca.power(ca.sum1(ca.power(drone_pos1-tree_pos1, 2)),(1./2)),
-                                                                ca.fmod(phi + 2 * np.pi, 2 * np.pi),
-                                                                np.mod(phi - drone_yaw1 + np.pi/2 + np.pi, 2 * np.pi)))
-        print(l4c_model_order2.get_sym_params().shape)
-        f = ca.Function('F_single',
-                                            [drone_pos1, drone_yaw1, tree_pos1,
-                                            l4c_model_order2.get_sym_params()],
-                                            [casadi_quad_approx_sym_out])
+    casadi_quad_approx_sym_out =l4c_model(
+        ca.horzcat(difference, ca.repmat(wrapped_angle, trees_lambda.shape[0], 1))
+    )
+    # Normalize the output to the range [0.5, 1.0]
+    if norm : casadi_quad_approx_sym_out = ((casadi_quad_approx_sym_out - 0.5) / (0.78 - 0.5)) * (1.0 - 0.5) + 0.5
+    f = ca.Function('F_single', [drone_state1, trees_lambda], [casadi_quad_approx_sym_out])
 
-        F_mapped = f.map(params_x_robot_tree_tree_lambda.shape[0])
-        tree_lambda_sym = ca.MX.sym('tree_lambda', params_x_robot_tree_tree_lambda.shape[0], 2)
-        tree_param_lambda_sym = ca.MX.sym('param_nn', params_x_robot_tree_tree_lambda.shape)
-        # Use mapped function
-        y_all = F_mapped(drone_pos1, drone_yaw1, tree_lambda_sym.T, tree_param_lambda_sym.T).T
-
-        return ca.Function('F_final', [drone_pos1, drone_yaw1, tree_lambda_sym, tree_param_lambda_sym], [y_all])
-
-def g_map_casadi(l4c_model, x_trees):
-    drone_state1 = ca.MX.sym('drone_pos', 3)
-    tree_pos1 = ca.MX.sym('tree_pos_single', 2)
-
-    # Second-order Taylor (Quadratic) approximation of the model as Casadi Function
-    casadi_quad_approx_sym_out = l4c_model(ca.vertcat(  drone_state1[:2]-tree_pos1,
-                                                        drone_state1[-1]))
-    f = ca.Function('F_single',
-                    [drone_state1, tree_pos1],
-                    [casadi_quad_approx_sym_out])
-
-    F_mapped = f.map(x_trees.shape[0])
-    tree_lambda_sym = ca.MX.sym('trees_lambda', x_trees.shape[0], 2)
-
-    # Use mapped function
-    y_all = F_mapped(drone_state1, tree_lambda_sym.T).T
-
-    return ca.Function('F_final', [drone_state1, tree_lambda_sym], [y_all])
-
-def setup_g_inline_casadi(f, cond= False):
-    drone_pos1 = ca.MX.sym('drone_pos', 2)
-    drone_yaw1 = ca.MX.sym('drone_yaw')
-    tree_pos1 = ca.MX.sym('tree_pos_single',2)
-
-    # Calculate condition for single tree
-    y_single = f(drone_pos1,drone_yaw1, tree_pos1)
-    F_single = ca.Function('F_single', [drone_pos1, drone_yaw1, tree_pos1], [y_single])
-    
-    return F_single
-
-def __g_map_casadi(f, x_trees_dim):
-
-    drone_pos1 = ca.MX.sym('drone_pos', 2)
-    drone_yaw1 = ca.MX.sym('drone_yaw')
-    tree_pos1  = ca.MX.sym('tree_pos_single',2)
-
-    
-    F_mapped = f.map(x_trees_dim[0])
-    tree_lambda_sym = ca.MX.sym('tree_lambda', x_trees_dim)
-    # Use mapped function
-    y_all = F_mapped(drone_pos1, drone_yaw1, tree_lambda_sym.T).T
-
-    return ca.Function('F_final', [drone_pos1, drone_yaw1, tree_lambda_sym], [y_all])
+    return f
 
 '''
 casadi map tools for fixed model dimension
@@ -133,26 +83,72 @@ def g_map_casadi_fixed_cond(F_single, x_trees_dim, cond_=None):
     return ca.Function('F_final', [drone_pos_sym, drone_yaw_sym, tree_lambda_sym, cond_sym], [y_all])
 
 '''
-setup g functions tools
+cost function
 '''
 
-def load_g(mode='gp', hidden_size=64, hidden_layer=2, synthetic=True, rt=False, gpu=True, n_inputs=3):
-    if  mode == 'mlp':
-        mlp, _ = LoadNN(hidden_size,hidden_layer, synthetic=synthetic, rt=rt, gpu=gpu, n_inputs=n_inputs)
-        return mlp
-    elif mode == 'gp':
-        gp =  load_ca_gp(synthetic=synthetic)
-        return lambda drone_pos,drone_yaw, tree_pos_single: g_gp(drone_pos,drone_yaw, tree_pos_single, gp)
+def entropy(lambda_):
+    """
+    Calculates the entropy of a probability distribution.
 
-def g_gp(drone_pos,drone_yaw, tree_pos_single, gp):
-    return  ca.MX(gp.predict(drone_yaw, [], np.zeros((1,1)))[0])
+    Args:
+        lambda_: Probability distribution (CasADi MX or DM object).
 
-'''
-bayes function
-'''
+    Returns:
+        Entropy value (CasADi MX or DM object).
+    """
+    # Adding a small epsilon to avoid log(0)
+    epsilon = 1e-12
+    lambda_ = ca.fmax(lambda_, epsilon)  # To avoid log(0) issues
+    one_minus_lambda = ca.fmax(1 - lambda_, epsilon)
 
-def bayes(lambda_k,y_z):
-    return ca.times(lambda_k, y_z) / (ca.times(lambda_k, y_z) + (1-lambda_k) * (1-y_z))
+    return -ca.sum1(lambda_ * ca.log10(lambda_) / ca.log10(2) +
+                    one_minus_lambda * ca.log10(one_minus_lambda) / ca.log10(2))
+
+def entropy_np(lambda_):
+    """
+    Calculates the entropy of a probability distribution.
+
+    Args:
+        lambda_: Probability distribution (numpy array).
+
+    Returns:
+        Entropy value (float).
+    """
+    # Adding a small epsilon to avoid log(0)
+    epsilon = 1e-12
+    lambda_ = np.maximum(lambda_, epsilon)  # To avoid log(0) issues
+    one_minus_lambda = np.maximum(1 - lambda_, epsilon)
+
+    return -np.sum(lambda_ * np.log2(lambda_) +
+                   one_minus_lambda * np.log2(one_minus_lambda))
+
+def bayes(lambda_k, y_z):
+    """
+    Performs a Bayesian update.
+
+    Args:
+        lambda_k: Prior probabilities.
+        y_z: Likelihoods.
+
+    Returns:
+        Posterior probabilities after Bayesian update.
+    """
+    numerator = ca.times(lambda_k, y_z)
+    denominator = numerator + ca.times((1 - lambda_k), (1 - y_z))
+    return numerator / denominator
+
+def fake_bayes(lambda_k, y_z):
+    """
+    Performs a Bayesian update and returns the maximum value between the inputs.
+
+    Args:
+        lambda_k: Prior probabilities.
+        y_z: Likelihoods.
+
+    Returns:
+        The element-wise maximum value between lambda_k and y_z.
+    """
+    return ca.fmin(ca.fmax(lambda_k, y_z), 1)
 
 def bayes_np(lambda_k, y_z):
     # Calculate the numerator
@@ -161,25 +157,3 @@ def bayes_np(lambda_k, y_z):
     denominator = numerator + np.multiply(1 - lambda_k, 1 - y_z)
     # Perform the division
     return np.divide(numerator, denominator)
-
-
-""""def g_map_casadi(f, x_trees_dim):
-        drone_pos1 = ca.MX.sym('drone_pos', 2)
-        tree_pos1 = ca.MX.sym('tree_pos_single', 2)
-        drone_yaw1 = ca.MX.sym('tree_pos_single', 1)
-        phi = ca.atan2(drone_pos1[1]-tree_pos1[1], drone_pos1[0]-tree_pos1[0])  + np.pi
-        
-        # Calculate condition for single tree
-        y_single = 0.5 + 0.25 * 0.25 *( 1 + ca.cos(phi)) * ( 1 + ca.sin(np.mod(phi - drone_yaw1 + np.pi + np.pi/2, 2 * np.pi)- np.pi)) * ( 1 / (1 + ca.power(ca.sum1(ca.power(drone_pos1-tree_pos1, 2)),(1./2))))  # f(ca.vertcat(ca.power(ca.sum1(ca.power(drone_pos1-tree_pos1, 2)),(1./2)),
-                                #phi,
-                                #np.mod(phi - drone_yaw1 + np.pi + np.pi/2, 2 * np.pi)- np.pi))
-        
-        
-        f = ca.Function('F_single', [drone_pos1, drone_yaw1, tree_pos1], [y_single])
-
-        F_mapped = f.map(x_trees_dim[0])
-        tree_lambda_sym = ca.MX.sym('tree_lambda', x_trees_dim)
-        # Use mapped function
-        y_all = F_mapped(drone_pos1, drone_yaw1, tree_lambda_sym.T).T
-
-        return ca.Function('F_final', [drone_pos1, drone_yaw1, tree_lambda_sym], [y_all])"""

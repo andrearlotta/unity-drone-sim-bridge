@@ -2,6 +2,8 @@ import plotly.graph_objects as go
 import plotly.io as pio
 import numpy as np
 import torch
+import casadi as ca
+
 
 def create_3d_plot(X_combined, Y_combined, y_pred, exp_name, is_polar= False):
     fig = go.Figure()
@@ -33,6 +35,7 @@ def create_3d_plot(X_combined, Y_combined, y_pred, exp_name, is_polar= False):
     )
     return fig
 
+
 def random_input_test_rt(casadi_quad_approx_func, l4c_model_order2, gpu, model):
 
     # Generate 500 random inputs
@@ -51,6 +54,7 @@ def random_input_test_rt(casadi_quad_approx_func, l4c_model_order2, gpu, model):
 
     pio.write_html(create_3d_plot(np.array(random_inputs), [], np.array(prediction).flatten(), 'test_l4casasdi',  is_polar=(exp['dataset_type'] == 'is_polar')), "test_l4casasdi_random_3d_plot.html")
     pio.write_html(create_3d_plot(np.array(random_inputs), [], np.array(torch_prediction).flatten(), 'test_l4casasdi',  is_polar=(exp['dataset_type'] == 'is_polar')), "test_l4casasdi_torch_random_3d_plot.html")
+
 
 def random_input_test_std(l4c_model, model, gpu):
     # Generate 500 random inputs

@@ -45,7 +45,7 @@ def drone_objects_distances_casadi(drone_pos_sym, objects_pos_sym, ray=0.0):
 
 def drone_objects_distances_np(drone_pos, objects_pos, ray=0.0):
     # Calculate distance between the drone and each object
-    return np.linalg.norm(objects_pos - drone_pos.T, axis=1) - ray
+    return np.linalg.norm(objects_pos - np.ones((objects_pos.shape[0],1))@ drone_pos.reshape((1,2)), axis=1) - ray
 
 def n_nearest_objects(drone_pos, objects_pos, num=4):
     # Get indices of the n nearest objects

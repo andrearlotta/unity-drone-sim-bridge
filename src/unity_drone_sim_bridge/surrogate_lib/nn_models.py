@@ -131,11 +131,3 @@ class SurrogateNetwork(nn.Module):
         output = self.network(x)
         # Scale the sigmoid output to the range [0.5, 1.0]
         return output
-
-def find_best_model_with_highest_epoch(folder_path):
-    pattern = re.compile(r'best_model_epoch_(\d+)\.ckpt')
-    return max(
-        (os.path.join(folder_path, f) for f in os.listdir(folder_path) if pattern.match(f)),
-        key=lambda f: int(pattern.search(f).group(1)),
-        default=None
-    )

@@ -60,7 +60,7 @@ def create_path_from_mpc_prediction(mpc_prediction):
 
 def create_tree_markers(trees_pos, scores):
     markers = MarkerArray()
-    
+    scores = scores.flatten()
     for i, (tree_pos, score) in enumerate(zip(trees_pos, scores)):
         if score == 0:
             continue

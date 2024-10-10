@@ -22,6 +22,14 @@ config = tf.compat.v1.ConfigProto()
 config.gpu_options.allow_growth = True
 session = tf.compat.v1.Session(config=config)
 
+def find_best_model_with_highest_epoch(folder_path):
+    pattern = re.compile(r'best_model_epoch_(\d+)\.ckpt')
+    return max(
+        (os.path.join(folder_path, f) for f in os.listdir(folder_path) if pattern.match(f)),
+        key=lambda f: int(pattern.search(f).group(1)),
+        default=None
+    )
+
 def LoadNN(hidden_size, hidden_layer, test_size=0.2, synthetic=False, rt=False, gpu=False, n_inputs=3, cartesian=True):
     """
     Carica una rete neurale già allenata (SurrogateNetworkFixedOutput)
@@ -33,7 +41,7 @@ def LoadNN(hidden_size, hidden_layer, test_size=0.2, synthetic=False, rt=False, 
     test_size = 0.3
     augmentation = False
     EXPERIMENT_NAME = f"{'cartesian' if cartesian else 'polar'}_{model_name}_in_{n_inputs}_hs{hidden_size}_hl{hidden_layer}_lr{lr}_e{epochs}_bs{batch_size}_ts{test_size}_syn{synthetic}_augmentation{augmentation}".replace(".", "_")
-    EXPERIMENT_NAME = "cartesian_SurrogateNetworkFixedOutput_in_3_hs16_hl2_lr0_0001_e1000_bs2_ts0_3_synFalse_augmentationFalse"
+    EXPERIMENT_NAME = "cartesian_SurrogateNetworkFixedOutput_in_3_hs16_hl2_lr0_0001_e250_bs1_ts0_3_synTrue_augmentationFalse"
     CHECKPOINT_PATH = find_best_model_with_highest_epoch(f"/home/pantheon/mpc-drone/checkpoints/{EXPERIMENT_NAME}")
 
     model = SurrogateNetworkFixedOutput(n_inputs, hidden_size, hidden_layer)
@@ -43,9 +51,7 @@ def LoadNN(hidden_size, hidden_layer, test_size=0.2, synthetic=False, rt=False, 
     print(f"Loading model from {CHECKPOINT_PATH}")
     print(f"Number of parameters: {count_parameters(model)}")
 
-    return l4c.realtime.realtime_l4casadi.RealTimeL4CasADi(model, approximation_order=2, device="cuda" if gpu else "cpu") \
-        if rt else \
-        l4c.L4CasADi(model, model_expects_batch_dim=True, device="cuda" if gpu else "cpu"), model
+    return model
 
 def train_model(X, Y, model, train_loader, val_loader, criterion, optimizer, num_epochs, device, checkpoint_path):
     best_val_loss = float('inf')
@@ -115,14 +121,21 @@ def run_training_experiments(experiments: List[Dict[str, Any]]) -> None:
         if exp['synthetic']:
             X, Y = generate_fake_dataset(10000, is_polar= exp['dataset_type'] == 'polar', n_input=exp["n_input"])
         else:
-            X, Y = load_surrogate_database(exp['dataset_type'] == 'polar', exp['n_input'], test_size=0.6)
+            X, Y = load_surrogate_database(exp['dataset_type'] == 'polar', exp['n_input'], test_size=1.0)
         if exp['augmentation']:
-            augmentation_X, augmentation_Y = generate_surrogate_augmented_data(X, int(0.2 * len(X)), exp['dataset_type'] == 'polar', n_input=exp["n_input"])
-            X = np.vstack((X, augmentation_X))
-            Y = np.hstack((Y, augmentation_Y))
+            augmentation_X, augmentation_Y = generate_surrogate_augmented_data(X, int(0.3 * len(X)), exp['dataset_type'] == 'polar', n_input=exp["n_input"])
 
         x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=exp['test_size'], shuffle=True)
         x_train, x_val, y_train, y_val = train_test_split(x_train, y_train, test_size=exp['test_size'], shuffle=True)
+        if exp['augmentation']:
+            augmentation_x_train, augmentation_x_test, augmentation_y_train, augmentation_y_test = train_test_split(augmentation_X, augmentation_Y, test_size=exp['test_size'], shuffle=True)
+            augmentation_x_train, augmentation_x_val, augmentation_y_train, augmentation_y_val = train_test_split(x_train, y_train, test_size=exp['test_size'], shuffle=True)
+            x_train = np.vstack((x_train, augmentation_x_train))
+            x_val = np.vstack((x_val, augmentation_x_val))
+            y_train = np.hstack((y_train, augmentation_y_train))
+            y_val = np.hstack((y_val, augmentation_y_val))
+            x_test = np.vstack((x_test, augmentation_x_test))
+            y_test = np.hstack((y_test, augmentation_y_test))
 
         train_dataset = SunDataset(x_train, y_train)
         val_dataset = SunDataset(x_val, y_val)
@@ -145,7 +158,7 @@ def run_training_experiments(experiments: List[Dict[str, Any]]) -> None:
         model = SimpleNetwork() if exp['model'] == 'SimpleNetwork' else model(exp['n_input'], exp['hidden_size'], exp['hidden_layers'])
         
         criterion = nn.MSELoss()
-        optimizer = optim.Adam(model.parameters(), lr=exp['learning_rate'], weight_decay=1e-5)
+        optimizer = optim.Adam(model.parameters(), lr=exp['learning_rate'])
 
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         model.to(device)
@@ -231,15 +244,15 @@ def run_training_experiments(experiments: List[Dict[str, Any]]) -> None:
 if __name__ == '__main__':
     # Initialize wandb
     wandb.login()
-    models = ['AlternativeSurrogateNetwork']
+    models = ['SurrogateNetworkFixedOutput']
     synthetic_options = [False]
     augmentation_options = [True]
-    n_input_options = [2]
+    n_input_options = [3]
     test_sizes = [0.2]
     learning_rates = [1e-5]  # Reduce learning rate
-    batch_sizes = [1]  # Larger batch size
+    batch_sizes = [2]  # Larger batch size
     num_epochs_options = [250]  # Increase the number of epochs, but use early stopping
-    hidden_sizes = [16]
+    hidden_sizes = [8]
     hidden_layers = [3]
     dataset_types = ['cartesian']
 

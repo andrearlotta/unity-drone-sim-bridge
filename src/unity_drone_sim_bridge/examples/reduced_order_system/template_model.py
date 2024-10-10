@@ -32,31 +32,13 @@ def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
     residual_h = model.set_variable('_tvp', 'reduced_order_h', shape=(1,1))
     residual_h_prev = model.set_variable('_tvp', 'reduced_order_h_prev', shape=(1,1))
 
-    single_g = setup_g_inline_casadi(g)
-    mapped_g = g_map_casadi(single_g, reduced_order_x_robot_tree_lambda.shape)
-    
-    # Expressions
-    def compute_H(lambda_, residual_h):
-        return sum1(lambda_ * log(lambda_)) + residual_h
-
-    def compute_H_prev(lambda_prev, residual_h_prev):
-        return sum1(lambda_prev * log(lambda_prev)) + residual_h_prev
-
-    def compute_y(x_robot,reduced_order_x_robot_tree_lambda):
-        return mapped_g(
-            x_robot[:2],
-            x_robot[-1],
-            reduced_order_x_robot_tree_lambda
-        )
-
-    def compute_cost_function(H, H_prev):
-        return -(H - H_prev)
+    mapped_g = g_map_casadi(g, reduced_order_x_robot_tree_lambda)
 
     # Define the expressions using the created functions
-    H = compute_H(lambda_, residual_h)
-    H_prev = compute_H_prev(lambda_prev, residual_h_prev)
-    y_expr = compute_y(x_robot + u_x_robot, reduced_order_x_robot_tree_lambda)
-    cost_function = compute_cost_function(H, H_prev)
+    H = entropy(lambda_) + residual_h
+    H_prev = entropy(lambda_prev) + residual_h_prev
+    y_expr =  mapped_g(x_robot + u_x_robot, reduced_order_x_robot_tree_lambda)
+    cost_function = -(H - H_prev)
     obstacle_expression =  drone_objects_distances_casadi(  x_robot[:2]+u_x_robot[:2],
                                                             reduced_order_x_robot_tree_obs,
                                                             ray = ray_obs

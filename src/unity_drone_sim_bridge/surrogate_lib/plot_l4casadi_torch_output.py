@@ -2,42 +2,10 @@ import os
 import numpy as np
 import torch
 import casadi as ca
-from unity_drone_sim_bridge.surrogate_lib.nn_tools import random_input_test_std
+from unity_drone_sim_bridge.surrogate_lib.nn_tools import random_input_test_std, LoadNN
 from unity_drone_sim_bridge.surrogate_lib.nn_models import SurrogateNetworkFixedOutput
 import l4casadi as l4c
 import plotly.graph_objects as go
-
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters())
-
-
-def LoadNN(hidden_size, hidden_layer, n_input=3):
-    """
-    Carica una rete neurale già allenata (SurrogateNetworkFixedOutput)
-    """
-    # Supponiamo che questo sia il nome dell'esperimento e il percorso del checkpoint
-    EXPERIMENT_NAME = "cartesian_SurrogateNetworkFixedOutput_in_3_hs16_hl2_lr1e-05_e500_bs1_ts0_3_synTrue_augmentationFalse"
-    #"cartesian_SurrogateNetworkFixedOutput_hs64_hl2_lr0_001_e50_bs1_ts0_2_synFalse"
-    CHECKPOINT_PATH = find_best_model_with_highest_epoch(f"./checkpoints/{EXPERIMENT_NAME}")
-    
-    model = SurrogateNetworkFixedOutput(n_input, hidden_size, hidden_layer)
-    model.load_state_dict(torch.load(CHECKPOINT_PATH))
-    model.eval()
-
-    print(f"Loading model from {CHECKPOINT_PATH}")
-    print(f"Number of parameters: {count_parameters(model)}")
-
-    return model
-
-
-def find_best_model_with_highest_epoch(folder_path):
-    import re
-    pattern = re.compile(r'best_model_epoch_(\d+)\.ckpt')
-    return max(
-        (os.path.join(folder_path, f) for f in os.listdir(folder_path) if pattern.match(f)),
-        key=lambda f: int(pattern.search(f).group(1)),
-        default=None
-    )
 
 def random_input_test_std(l4c_model, model, gpu, n_input, is_polar):
     # Generate 500 random inputs
@@ -110,6 +78,5 @@ if __name__ == '__main__':
     # Carica il modello neurale
     model = LoadNN(hidden_size, hidden_layer, n_input)
     l4c_model = l4c.L4CasADi(model, model_expects_batch_dim=True, device="cuda" if gpu else "cpu")
-    # Puoi caricare il modello L4CasADi qui, se necessario
     # Esegui random_input_test_std
     random_input_test_std(l4c_model, model, gpu=gpu, n_input=n_input, is_polar=is_polar)

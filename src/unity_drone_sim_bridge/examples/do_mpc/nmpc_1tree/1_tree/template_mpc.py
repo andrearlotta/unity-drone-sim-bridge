@@ -29,7 +29,7 @@ import os
 import do_mpc
 
 
-def template_mpc(model, get_obs, get_lambdas, get_residual_H, silence_solver = False):
+def template_mpc(model,g, get_nn_input, silence_solver = False, rt=False):
     """
     --------------------------------------------------------------------------
     template_mpc: tuning parameters
@@ -39,41 +39,21 @@ def template_mpc(model, get_obs, get_lambdas, get_residual_H, silence_solver = F
 
     setup_mpc = {
         'n_horizon': 25,
-        'n_robust': 0,
         'open_loop': 0,
-        't_step': .5,
-        'state_discretization': 'collocation',
-        'collocation_type': 'radau',
-        'collocation_deg': 2,
-        'collocation_ni': 1,
+        't_step': 1/5,
+        #'collocation_deg': 10,
+        #'collocation_ni': 10,
         'store_full_solution': True,
         # Use MA27 linear solver in ipopt for faster calculations:
-        'nlpsol_opts': {        "ipopt.linear_solver": "ma27",
-        "ipopt.max_iter": 500,
-        "ipopt.timing_statistics": 'no',
-
-        "ipopt.sb":"yes",
-
-        "ipopt.nlp_scaling_method":"equilibration-based",
-        "ipopt.obj_scaling_factor": +1,
-        "ipopt.nlp_scaling_min_value" : 1e-10,
-        "ipopt.tol": 1e-2,
-        "print_time": False,
-
-        "ipopt.print_info_string": "yes",
-        "ipopt.output_file": "nmpc_mul_shooting_mx_l4casadi_output",
-        "ipopt.print_level":5,
-        "ipopt.hessian_approximation" : 'limited-memory',
-        "ipopt.warm_start_init_point" : 'yes',
-        "ipopt.mu_strategy" : 'monotone',
-        #"ipopt.mu_init" : 1e-4,
-        "ipopt.warm_start_bound_push" : 1e-6,
-        "ipopt.warm_start_mult_bound_push" : 1e-2,
-        "ipopt.line_search_method" : "filter",
-        "ipopt.alpha_for_y":"primal-and-full",
-        #"ipopt.accept_every_trial_step": "yes"
-    }
-
+        'nlpsol_opts': {'ipopt.linear_solver': 'ma27',
+                        "ipopt.max_iter": 100,
+                        #"ipopt.tol": 10e-3, #default 10e-8
+                        #"ipopt.warm_start_init_point"       :   "yes",
+                        #"ipopt.warm_start_same_structure"   :   "yes",
+                        #"ipopt.jacobian_approximation"       :   "finite-difference-values",
+                        #"ipopt.gradient_approximation"       :   "finite-difference-values",
+                        #"ipopt.hessian_approximation"        :   "limited-memory" 
+                        }
     }
 
     mpc.set_param(**setup_mpc)
@@ -87,24 +67,13 @@ def template_mpc(model, get_obs, get_lambdas, get_residual_H, silence_solver = F
 
 
     mpc.set_objective(mterm=mterm, lterm=lterm)
-
+    mpc.set_rterm(x_robot_set=np.array(3*[1e-1]))
 
     mpc.bounds['lower','_u','x_robot_set'] = 2 * [-.5] + [-np.pi/18]
     mpc.bounds['upper','_u','x_robot_set'] = 2 * [+.5] + [+np.pi/18]
     
     # Avoid the obstacles:
     #mpc.set_nl_cons('obstacles', -model.aux['obstacle_distance'], 0)
-
-    tvp_template = mpc.get_tvp_template()
-
-    def tvp_fun(time_x):
-        for k in range(mpc.settings.n_horizon):
-            tvp_template['_tvp', k, 'reduced_order_x_robot_tree_obs'] = get_obs()
-            tvp_template['_tvp', k, 'reduced_order_x_robot_tree_lambda'] = get_lambdas()
-            tvp_template['_tvp', k, 'reduced_order_h_prev'] = get_residual_H()
-            tvp_template['_tvp', k, 'reduced_order_h'] = get_residual_H()
-        return tvp_template
-    mpc.set_tvp_fun(tvp_fun)
 
     mpc.setup()
 

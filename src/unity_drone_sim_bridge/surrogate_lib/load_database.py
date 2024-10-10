@@ -15,6 +15,7 @@ def find_latest_folder(base_dir):
     latest_folder = max(subdirs, key=lambda d: os.path.getmtime(os.path.join(base_dir, d)))
     return os.path.join(base_dir, latest_folder)
 
+
 def find_csv_in_folder(folder_path):
     """Finds the first CSV file in the folder."""
     csv_files = glob.glob(os.path.join(folder_path, "*.csv"))
@@ -23,6 +24,7 @@ def find_csv_in_folder(folder_path):
         return csv_files[0]  # Return the first CSV file found
     else:
         raise FileNotFoundError("No CSV files found in the folder.")
+
 
 def create_detections_folder(folder_path):
     """Creates the 'detections' folder inside the given folder path."""
@@ -35,6 +37,7 @@ def create_detections_folder(folder_path):
         print(f"Folder already exists: {detections_folder}")
     
     return detections_folder
+
 
 def load_database(N=None):
     dataset_path = "/home/pantheon/lstm_sine_fitting/qi_csv_datasets/drone_round_sun_012_SaturationAndLuminance.csv"
@@ -60,6 +63,7 @@ def load_database(N=None):
     y_train = y[subset_indices]
     
     return X_train, y_train
+
 
 def load_synthetic_database(N=40, N_test=100):
     X = (np.linspace(-1, 1, N) * (2 * np.pi)).reshape(-1, 1)
@@ -100,6 +104,7 @@ def generate_cartesian_surrogate_synthetic_data(X, num_samples):
 
     return np.array(synthetic_X), np.array(synthetic_Y)
 
+
 # Utility Function
 def load_surrogate_database(polar, n_input, test_size=0.0):
     polar = polar
@@ -114,19 +119,21 @@ def load_surrogate_database(polar, n_input, test_size=0.0):
     latest_dataset_folder = find_latest_folder(base_dir=base_dir)
     # Step 4: Create output CSV file inside the latest folder
     DATA_PATH = os.path.join(latest_dataset_folder, output_csv_filename)
-
-    X = []
+    print(DATA_PATH)
+    print(DATA_PATH)
+    X = []  
     Y = []
     with open(DATA_PATH, 'r') as infile:
         data = csv.reader(infile)
         next(data)  # Skip the header
         for row in data:
             a, b, c, value = map(float, row)
-            X.append([a,b,c] if n_input == 3 else [a,b])
+            X.append([a,b, np.deg2rad(c)] if n_input == 3 else [a,b])
             Y.append(value)
     #X, _, Y, _ = train_test_split(X, Y, test_size=test_size, shuffle=True)
     
     return np.array(X), np.array(Y)
+
 
 # Generate synthetic data
 def generate_surrogate_augmented_data(X, num_samples, polar, n_input):
@@ -158,6 +165,7 @@ def generate_surrogate_augmented_data(X, num_samples, polar, n_input):
         
     return np.array(synthetic_X), np.array(synthetic_Y)
 
+
 def generate_fake_dataset(num_samples, is_polar, n_input):
     
     synthetic_X = []
@@ -181,6 +189,7 @@ def generate_fake_dataset(num_samples, is_polar, n_input):
                 synthetic_Y.append(value)
 
     return np.array(synthetic_X), np.array(synthetic_Y)
+
 
 def plot_surface_vary_drone(tree_pos, thresh_distance):
     # Define ranges for drone position (X, Y) and yaw
