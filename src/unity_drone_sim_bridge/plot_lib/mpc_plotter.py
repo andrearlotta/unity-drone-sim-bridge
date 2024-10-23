@@ -164,17 +164,14 @@ class MPCPlotter:
 
         # Save the animation as an MP4
         ani.save(filename, writer='ffmpeg')
-
 import tkinter as tk
 from tkinter import ttk
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.animation import FuncAnimation
 import numpy as np
-
 class MPCGUI:
     def __init__(self, master, mpc):
-
         self.master = master
         self.mpc_plotter = mpc
         self.current_frame = 0
@@ -185,7 +182,14 @@ class MPCGUI:
         
         self.plot_frame()
 
-        self.frame_slider = ttk.Scale(master, from_=0, to=len(self.mpc_plotter.mpc.data['_x', 'x_robot']) - 1, orient=tk.HORIZONTAL, command=self.on_slider_move)
+        # Calculate tick interval based on the number of frames to avoid overcrowding
+        num_frames = len(self.mpc_plotter.mpc.data['_x', 'x_robot'])
+        tick_interval = max(1, num_frames // 10)  # Show tick labels every 10% of the frames
+
+        # Use tk.Scale with adjusted tick interval
+        self.frame_slider = tk.Scale(master, from_=0, to=num_frames - 1,
+                                     orient=tk.HORIZONTAL, command=self.on_slider_move, 
+                                     tickinterval=tick_interval, length=400)
         self.frame_slider.pack(side=tk.BOTTOM, fill=tk.X)
         self.frame_slider.set(0)
 

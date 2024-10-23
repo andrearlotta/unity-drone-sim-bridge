@@ -1,7 +1,7 @@
 from unity_drone_sim_bridge.surrogate_lib.surrogate_func_tools import load_g
-from unity_drone_sim_bridge.examples.nmpc_do_mpc_1tree.template_model import template_model
-from unity_drone_sim_bridge.examples.nmpc_do_mpc_1tree.template_mpc import template_mpc
-from unity_drone_sim_bridge.examples.nmpc_do_mpc_1tree.template_simulator import Simulator
+from unity_drone_sim_bridge.examples.do_mpc.nmpc.single_tree.template_model import template_model
+from unity_drone_sim_bridge.examples.do_mpc.nmpc.single_tree.template_mpc import template_mpc
+from unity_drone_sim_bridge.examples.do_mpc.nmpc.single_tree.template_simulator import Simulator
 import numpy as np
 from do_mpc.data import save_results
 import time

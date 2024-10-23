@@ -1,21 +1,16 @@
 import numpy as np
-from unity_drone_sim_bridge.ros_com_lib.bridge_class import BridgeClass
-from unity_drone_sim_bridge.ros_com_lib.sensors import SENSORS
-from unity_drone_sim_bridge.generic_tools import *
 from unity_drone_sim_bridge.surrogate_lib.surrogate_func_tools import bayes_np
 from unity_drone_sim_bridge.ros_com_lib.sensors import update_robot_state
-import rospy
 import tf2_ros
-from geometry_msgs.msg import TransformStamped
-from tf.transformations import euler_from_quaternion
+
 
 class Simulator:
-    def __init__(self, states, trees, dim_lambda=1, dim_obs=1):
+    def __init__(self, model, trees, dim_lambda=16, dim_obs=5):
         self.dim_lambda = dim_lambda
         self.dim_obs = dim_obs
         
         self.trees_pos = trees
-        self.x_k= {'x_robot': np.zeros(states.shape)}
+        self.x_k = {name: np.zeros(model.x[name].shape) for name in model.x.keys()}
         self.x_k['lambda']= 0.5 * np.ones((len(self.trees_pos)))
         self.x_k['lambda_prev']= 0.5 * np.ones((len(self.trees_pos)))
         self.x_k['y']=  0.5 * np.ones(len(self.trees_pos))
@@ -26,10 +21,14 @@ class Simulator:
 
     def update(self, y_z):
         self.x_k['x_robot']  = update_robot_state(self.tf_buffer)
-        self.x_k['lambda_prev'] = self.x_k['lambda'].copy()
 
-        scores = np.array(y_z['tree_scores'])        
+        scores = np.array(y_z['tree_scores'])
+
         self.x_k['y'][np.nonzero(scores!=0.5)[0]] = scores[np.nonzero(scores!=0.5)]
+        
+        self.x_k['lambda_prev'] = self.x_k['lambda'].copy()
+        
+        # Update lambda values for trees in the reduced order set
         self.x_k['lambda'][np.nonzero(scores!=0.5)[0]] = bayes_np(
             self.x_k['lambda_prev'][np.nonzero(scores!=0.5)[0]], 
             self.x_k['y'][np.nonzero(scores!=0.5)[0]]

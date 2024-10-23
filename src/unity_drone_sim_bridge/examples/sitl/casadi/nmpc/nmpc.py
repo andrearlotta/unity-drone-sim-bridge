@@ -22,7 +22,7 @@ import torch
 import csv
 import l4casadi as l4c  # Custom module for integrating PyTorch models with CasADi
 from unity_drone_sim_bridge.surrogate_lib.nn_models import SurrogateNetworkFixedOutput  # Custom neural network model
-from unity_drone_sim_bridge.plot_lib.draw import Draw_MPC_point_stabilization_v1
+from unity_drone_sim_bridge.plot_lib.casadi_draw import Draw_MPC_point_stabilization_v1
 from unity_drone_sim_bridge.examples.sitl.setup_fake_field import generate_tree_positions
 from unity_drone_sim_bridge.surrogate_lib.surrogate_func_tools import g_map_casadi, bayes, fake_bayes, entropy
 from unity_drone_sim_bridge.surrogate_lib.nn_tools import LoadNN

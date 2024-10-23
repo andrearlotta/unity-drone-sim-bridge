@@ -1,5 +1,5 @@
 import numpy as np
-from unity_drone_sim_bridge.generic_tools import fake_nn, fov_weight_fun_polar_numpy, trees_satisfy_conditions_np
+from unity_drone_sim_bridge.generic_tools import fake_nn, trees_satisfy_conditions_np
 import csv
 import random
 from sklearn.model_selection import train_test_split

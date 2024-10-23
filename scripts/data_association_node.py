@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import rospy
 import numpy as np
 import cv2
@@ -14,12 +12,14 @@ from unity_drone_sim_bridge.srv import GetTreesPoses
 from std_msgs.msg import Float32MultiArray
 import tf
 import tf.transformations as tf_trans
+import message_filters
 
-def weight_value(n_elements, mean_score, midpoint=15, steepness=3):
+def weight_value(n_elements, mean_score, midpoint=10, steepness=3):
     # Sigmoidal weighting based on number of elements
     weight = 1 / (1 + np.exp(-steepness * (n_elements - midpoint)))
     
     return weight * mean_score + (1 - weight) * 0.5
+
 class DataAssociationNode:
     def __init__(self):
         rospy.init_node('bounding_box_3d_pose', anonymous=True)
@@ -33,17 +33,24 @@ class DataAssociationNode:
         # Parameter to control visualization
         self.publish_visualization = rospy.get_param('~publish_visualization', True)
 
-        self.detection_sub = rospy.Subscriber("/yolov7/detect", Detection2DArray, self.detection_callback)
-        self.depth_image_sub = rospy.Subscriber("/camera/depth/image/compressed", CompressedImage, self.depth_image_callback)
+        # Synchronizing subscribers
+        detection_sub = message_filters.Subscriber("/yolov7/detect", Detection2DArray)
+        depth_image_sub = message_filters.Subscriber("/camera/depth/image/compressed", CompressedImage)
+
+        # ApproximateTimeSynchronizer allows for small time differences in the messages
+        self.ts = message_filters.ApproximateTimeSynchronizer([detection_sub, depth_image_sub], queue_size=10, slop=0.2)
+        self.ts.registerCallback(self.synchronized_callback)
+
+        # Subscribing to camera info
         self.camera_info_sub = rospy.Subscriber("/camera/depth/camera_info", CameraInfo, self.camera_info_callback)
         
         # Publisher for tree scores
-        self.scores_pub = rospy.Publisher("/tree_scores", Float32MultiArray, queue_size=10)
+        self.scores_pub = rospy.Publisher("/tree_scores", Float32MultiArray, queue_size=1)
         
         # Conditional initialization of marker publisher
         if self.publish_visualization:
-            self.marker_scores_pub = rospy.Publisher("/scores_markers", MarkerArray, queue_size=10)
-            self.marker_fruits_pub = rospy.Publisher("/fruits_markers", MarkerArray, queue_size=10)
+            self.marker_scores_pub = rospy.Publisher("/scores_markers", MarkerArray, queue_size=1)
+            self.marker_fruits_pub = rospy.Publisher("/fruits_markers", MarkerArray, queue_size=1)
         
         self.cam_model = PinholeCameraModel()
 
@@ -58,7 +65,6 @@ class DataAssociationNode:
         
         rospy.spin()
 
-
     def update_tree_poses(self):
         try:
             response = self.get_trees_poses()
@@ -70,12 +76,6 @@ class DataAssociationNode:
         self.camera_info = msg
         self.camera_matrix = np.array(self.camera_info.K).reshape(3, 3)
         self.cam_model.fromCameraInfo(msg)
-
-    def depth_image_callback(self, msg):
-        try:
-            self.depth_image = self.bridge.compressed_imgmsg_to_cv2(msg, desired_encoding="passthrough")[:,:,0]
-        except CvBridgeError as e:
-            rospy.logerr(e)
 
     def uint8_to_distance(self, value, min_dist, max_dist):
         value = max(0, min(value, 255))
@@ -101,7 +101,7 @@ class DataAssociationNode:
         transformed_positions = []
         for fruit_pos in fruit_positions:
             point_camera = PointStamped()
-            point_camera.point= Point(*fruit_pos)
+            point_camera.point = Point(*fruit_pos)
             point_camera.header.frame_id = 'depth_camera_frame'
             try:
                 point_map = self.tf_listener.transformPoint('map', point_camera)
@@ -111,14 +111,20 @@ class DataAssociationNode:
                 continue
         return np.array(transformed_positions)
 
-    def detection_callback(self, msg):
-        if self.depth_image is None or self.camera_matrix is None or self.tree_poses is None:
+    def synchronized_callback(self, detection_msg, depth_image_msg):
+        if self.camera_matrix is None or self.tree_poses is None:
+            return
+
+        try:
+            self.depth_image = self.bridge.compressed_imgmsg_to_cv2(depth_image_msg, desired_encoding="passthrough")[:, :, 0]
+        except CvBridgeError as e:
+            rospy.logerr(e)
             return
 
         fruit_positions = []
         fruit_scores = []
 
-        for detection in msg.detections:
+        for detection in detection_msg.detections:
             bbox = detection.bbox
             xmin = int(bbox.center.x - bbox.size_x / 2)
             xmax = int(bbox.center.x + bbox.size_x / 2)
@@ -141,11 +147,11 @@ class DataAssociationNode:
 
             fruit_positions.append(XYZ)
             fruit_scores.append(detection.results[0].score)
-            
+
         fruit_positions = np.array(fruit_positions)
 
         # Transform fruit positions from camera frame to map frame
-        transformed_fruit_positions = self.transform_fruit_positions(fruit_positions, msg.header)
+        transformed_fruit_positions = self.transform_fruit_positions(fruit_positions, detection_msg.header)
 
         associated_fruits = self.associate_fruits_to_trees(transformed_fruit_positions)
 
@@ -164,64 +170,21 @@ class DataAssociationNode:
         if self.publish_visualization:
             markers = MarkerArray()
 
-            """# Tree markers
-            for i, (tree_pos, score) in enumerate(zip(self.tree_poses, tree_scores)):
-                if score == 0:
-                    continue
-
-                # Sphere marker for the tree
-                sphere_marker = Marker()
-                sphere_marker.header = msg.header
-                sphere_marker.header.frame_id = 'map'
-                sphere_marker.ns = "tree_markers"
-                sphere_marker.id = i * 2
-                sphere_marker.type = Marker.CYLINDER
-                sphere_marker.action = Marker.ADD
-                sphere_marker.pose.position.x = tree_pos[0]
-                sphere_marker.pose.position.y = tree_pos[1]
-                sphere_marker.pose.position.z = 0.0
-                sphere_marker.pose.orientation.w = 1.0
-                sphere_marker.scale.x = sphere_marker.scale.y = sphere_marker.scale.z = 0.5
-                sphere_marker.color.a = 1.0
-                sphere_marker.color.r = 1.0 - score
-                sphere_marker.color.g = score
-                sphere_marker.color.b = 0.0
-
-                markers.markers.append(sphere_marker)
-
-                # Text marker for the score
-                text_marker = Marker()
-                text_marker.header = msg.header
-                text_marker.header.frame_id = 'map'
-                text_marker.ns = "tree_scores"
-                text_marker.id = i * 2 + 1
-                text_marker.type = Marker.TEXT_VIEW_FACING
-                text_marker.action = Marker.ADD
-                text_marker.pose.position.x = tree_pos[0]
-                text_marker.pose.position.y = tree_pos[1]
-                text_marker.pose.position.z = 2.5
-                text_marker.text = f"Score: {score:.2f}"
-                text_marker.scale.z = 0.2
-                text_marker.color.a = 1.0
-                text_marker.color.r = text_marker.color.g = text_marker.color.b = 1.0
-
-                markers.markers.append(text_marker)
-            self.marker_scores_pub.publish(markers)"""
-
             # Fruit markers
             for i, (fruit_pos, score) in enumerate(zip(transformed_fruit_positions, fruit_scores)):
                 # Sphere marker for the fruit
                 fruit_marker = Marker()
-                fruit_marker.header = msg.header
+                fruit_marker.header = detection_msg.header
                 fruit_marker.header.frame_id = 'map'
                 fruit_marker.ns = "fruit_markers"
                 fruit_marker.id = len(self.tree_poses) * 2 + i * 2
                 fruit_marker.type = Marker.SPHERE
-                fruit_marker.action = Marker.ADD
+                fruit_marker.action = Marker.MODIFY
                 fruit_marker.pose.position.x = fruit_pos[0]
                 fruit_marker.pose.position.y = fruit_pos[1]
                 fruit_marker.pose.position.z = fruit_pos[2]
                 fruit_marker.pose.orientation.w = 1.0
+                fruit_marker.lifetime = rospy.Duration(0.2)
                 fruit_marker.scale.x = fruit_marker.scale.y = fruit_marker.scale.z = 0.1
                 fruit_marker.color.a = 1.0
                 fruit_marker.color.r = 0.0

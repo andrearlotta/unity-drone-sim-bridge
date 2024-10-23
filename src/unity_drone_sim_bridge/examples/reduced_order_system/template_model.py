@@ -27,20 +27,20 @@ def template_model(dim_lambda=5, dim_obs=5, symvar_type='MX', g=None):
     u_x_robot = model.set_variable(var_type='_u', var_name='x_robot_set', shape=(3,1))
 
     # Time-varying parameters
-    reduced_order_x_robot_tree_lambda = model.set_variable('_tvp', 'reduced_order_x_robot_tree_lambda', (dim_lambda, 2))
-    reduced_order_x_robot_tree_obs = model.set_variable('_tvp', 'reduced_order_x_robot_tree_obs', (dim_obs, 2))
+    reduced_order_x__tree_lambda = model.set_variable('_tvp', 'reduced_order_x__tree_lambda', (dim_lambda, 2))
+    reduced_order_x__tree_obs = model.set_variable('_tvp', 'reduced_order_x__tree_obs', (dim_obs, 2))
     residual_h = model.set_variable('_tvp', 'reduced_order_h', shape=(1,1))
     residual_h_prev = model.set_variable('_tvp', 'reduced_order_h_prev', shape=(1,1))
 
-    mapped_g = g_map_casadi(g, reduced_order_x_robot_tree_lambda)
+    mapped_g = g_map_casadi(g, reduced_order_x__tree_lambda)
 
     # Define the expressions using the created functions
     H = entropy(lambda_) + residual_h
     H_prev = entropy(lambda_prev) + residual_h_prev
-    y_expr =  mapped_g(x_robot + u_x_robot, reduced_order_x_robot_tree_lambda)
+    y_expr =  mapped_g(x_robot + u_x_robot, reduced_order_x__tree_lambda)
     cost_function = -(H - H_prev)
     obstacle_expression =  drone_objects_distances_casadi(  x_robot[:2]+u_x_robot[:2],
-                                                            reduced_order_x_robot_tree_obs,
+                                                            reduced_order_x__tree_obs,
                                                             ray = ray_obs
                                                         )
 

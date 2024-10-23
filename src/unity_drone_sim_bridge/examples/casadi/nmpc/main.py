@@ -10,7 +10,7 @@ from unity_drone_sim_bridge.ros_com_lib.bridge_class import BridgeClass
 from unity_drone_sim_bridge.ros_com_lib.sensors import SENSORS
 from unity_drone_sim_bridge.generic_tools import *
 
-from unity_drone_sim_bridge.plot_lib.draw import Draw_MPC_point_stabilization_v1  # Custom visualization module
+from unity_drone_sim_bridge.plot_lib.casadi_draw import Draw_MPC_point_stabilization_v1  # Custom visualization module
 
 def shift_movement(T, t0, x0, u, x_f, f):
     """
@@ -41,11 +41,11 @@ def run_simulation(g_function = 'mlp', simulation_steps= 10, rt=False, gpu=False
     trees_pos = np.array(bridge.callServer({"trees_poses": None})["trees_poses"])
     
     # Parameters
-    T = 0.25            # Sampling time [s]
-    N = 30              # Prediction horizon
+    T = 1.0            # Sampling time [s]
+    N = 10              # Prediction horizon
     rob_diam = 0.3      # Robot diameter [m]
-    v_max = .5        # Maximum linear velocity [m/s]
-    omega_max =  np.pi / 18.0 # Maximum angular velocity [rad/s]
+    v_max = 1.0        # Maximum linear velocity [m/s]
+    omega_max =  np.pi # Maximum angular velocity [rad/s]
 
     # State variables
     x = ca.MX.sym("x")
@@ -85,7 +85,7 @@ def run_simulation(g_function = 'mlp', simulation_steps= 10, rt=False, gpu=False
     P = ca.MX.sym("P", n_states + len(trees_pos))  # Parameter vector (initial state and previous bayes)
 
     # Cost function weights
-    Q = np.array([[1e-1/(len(trees_pos)*N)]])  # Weight for bayes change
+    Q = np.array([[1e0/(len(trees_pos)*N)]])  # Weight for bayes change
     R = np.diag([1e-6, 1e-6, 1e-6])  # Weights for control input
 
     # Objective function initialization
@@ -110,7 +110,7 @@ def run_simulation(g_function = 'mlp', simulation_steps= 10, rt=False, gpu=False
         entropy_list.append(entropy(bayes_list[-1]))
         
         # Objective function: Minimize the change in bayes and control effort
-        obj += Q * entropy_list[i] 
+        obj += Q * entropy_list[i]  #+ ca.mtimes([U[:, i].T, R, U[:, i]])
 
         # Add the state transition constraint
         g.append(X[:, i + 1] - x_next_)
@@ -122,27 +122,27 @@ def run_simulation(g_function = 'mlp', simulation_steps= 10, rt=False, gpu=False
     nlp_prob = {"f": obj, "x": opt_variables, "p": P, "g": ca.vertcat(*g)}
     opts_setting = {
         "ipopt.linear_solver": "ma27",
-        "ipopt.max_iter": 500,
+        #"ipopt.tol": 5*1e-3,
         "ipopt.timing_statistics": 'no',
 
         "ipopt.sb":"yes",
 
-        "ipopt.nlp_scaling_method":"equilibration-based",
-        "ipopt.obj_scaling_factor": +1,
-        "ipopt.nlp_scaling_min_value" : 1e-10,
-        "ipopt.tol": 1e-2,
+        #"ipopt.nlp_scaling_method":"equilibration-based",
+        #"ipopt.obj_scaling_factor": +1,
+        #"ipopt.nlp_scaling_min_value" : 1e-10,
+        #"ipopt.tol": 1e-2,
         "print_time": False,
 
-        "ipopt.print_info_string": "yes",
-        "ipopt.output_file": "nmpc_mul_shooting_mx_l4casadi_output",
-        "ipopt.print_level":5,
+        #"ipopt.print_info_string": "yes",
+        #"ipopt.output_file": "nmpc_mul_shooting_mx_l4casadi_output",
+        #"ipopt.print_level":5,
         "ipopt.hessian_approximation" : 'limited-memory',
-        "ipopt.warm_start_init_point" : 'yes',
-        "ipopt.mu_strategy" : 'monotone',
+        #"ipopt.warm_start_init_point" : 'yes',
+        #"ipopt.mu_strategy" : 'monotone',
         #"ipopt.mu_init" : 1e-4,
-        "ipopt.warm_start_bound_push" : 1e-6,
-        "ipopt.warm_start_mult_bound_push" : 1e-2,
-        "ipopt.line_search_method" : "filter",
+        #"ipopt.warm_start_bound_push" : 1e-6,
+        #"ipopt.warm_start_mult_bound_push" : 1e-2,
+        #"ipopt.line_search_method" : "filter",
         "ipopt.alpha_for_y":"primal-and-full",
         #"ipopt.accept_every_trial_step": "yes"
     }
@@ -172,8 +172,8 @@ def run_simulation(g_function = 'mlp', simulation_steps= 10, rt=False, gpu=False
 
     # Set bounds for state variables
     for _ in range(N + 1):
-        lbx.extend([-30.0, -30.0, -np.inf])
-        ubx.extend([30.0, 30.0, np.inf])
+        lbx.extend([-10.0, -10.0, -np.inf])
+        ubx.extend([300.0, 300.0, np.inf])
 
 # =============================================================================
 # SIMULATION DEFINITION
@@ -255,7 +255,7 @@ def run_simulation(g_function = 'mlp', simulation_steps= 10, rt=False, gpu=False
         # Apply the first control input and update the state
         t0, x0, u0, next_states = shift_movement(T, t0, x0, u0, x_m, f)
         bridge.pubData({"predicted_path": next_states, "tree_markers": simulator})
-
+        print(simulator.u_k)
         bridge.pubData(simulator.u_k)
 
         # Calculate the elapsed time for the loop iteration

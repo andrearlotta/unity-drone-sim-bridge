@@ -25,27 +25,10 @@ class Simulator:
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
 
-        self.update_robot_state()
-
-    def update_robot_state(self):
-        robot_pose = []
-        while not len(robot_pose):
-            try:
-                # Get the transform from 'map' to 'drone_base_link'
-                trans = self.tf_buffer.lookup_transform('map', 'drone_base_link', rospy.Time())
-
-                # Extract rotation
-                (_, _, yaw) = euler_from_quaternion([ trans.transform.rotation.x,  trans.transform.rotation.y,  trans.transform.rotation.z,  trans.transform.rotation.w])
-                
-                # Update x_robot with the transform (x, y, yaw)
-                robot_pose = np.array([trans.transform.translation.x, trans.transform.translation.y, yaw])
-            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
-                rospy.logwarn(f"Failed to get transform: {e}")
-            
-        self.x_k['x_robot']  = robot_pose
+        self.x_k['x_robot']  = update_robot_state(simulator.tf_buffer)
 
     def update(self, y_z):
-        self.update_robot_state()
+        self.x_k['x_robot']  = update_robot_state(simulator.tf_buffer)
         scores = np.array(y_z['tree_scores'])
 
         print(self.x_k['y'][np.nonzero(scores!=0.5)[0]])
@@ -65,28 +48,3 @@ class Simulator:
         x_0['lambda']       =   self.x_k['lambda']
         x_0['y']            =   self.x_k['y']
         return np.concatenate(list(x_0.values()), axis=None)
-    
-    def mpc_nn_inputs(self):
-        tree_pos = self.x_k['x_robot'][:2].reshape((2,))
-        drone_pos = self.trees_pos
-        drone_yaw = self.x_k['x_robot'][-1]
-        
-        # Vector difference between drone and each tree
-        diff = drone_pos - tree_pos
-
-        # Calculate angle phi for each tree, and adjust by pi/2
-        phi = np.arctan2(diff[:, 1], diff[:, 0]) + np.pi/2
-
-        # Calculate Euclidean distance from drone to each tree
-        distances = np.linalg.norm(diff, axis=1)
-
-        # Normalize phi to be in the range [0, 2*pi]
-        phi_normalized = np.mod(phi + 2 * np.pi, 2 * np.pi)
-
-        # Compute the relative angle, adjust by pi/2 and normalize
-        relative_angles = np.mod(phi - drone_yaw + np.pi + np.pi/2, 2 * np.pi)
-
-        # Combine results into a single output array (if needed for further processing)
-        result = np.vstack((distances, phi_normalized, relative_angles)).T
-
-        return result

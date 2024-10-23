@@ -8,6 +8,7 @@ from cv_bridge import CvBridge
 import numpy as np
 from unity_drone_sim_bridge.srv import GetTreesPoses
 import tf
+import tf2_ros
 from std_msgs.msg import Float32MultiArray
 from vision_msgs.msg import Detection2DArray
 from geometry_msgs.msg import PoseStamped
@@ -37,7 +38,7 @@ def create_path_from_mpc_prediction(mpc_prediction):
     for i in range(mpc_prediction.shape[1]):
         pose = PoseStamped()
         pose.header = path.header
-        pose.header.stamp += rospy.Duration(i * 0.1)  # Assuming 0.1s between predictions
+        pose.header.stamp =  rospy.Time.now() + rospy.Duration(0.1*i)  # Assuming 0.1s between predictions
 
         pose.pose.position.x = mpc_prediction[0, i]
         pose.pose.position.y = mpc_prediction[1, i]
@@ -98,6 +99,24 @@ def create_tree_markers(trees_pos, scores):
         markers.markers.append(text_marker)
     
     return markers
+
+def update_robot_state(tf_buffer):
+    robot_pose = []
+    while not len(robot_pose):
+        try:
+            # Get the transform from 'map' to 'drone_base_link'
+            trans = tf_buffer.lookup_transform('map', 'drone_base_link', rospy.Time())
+
+            # Extract rotation
+            (_, _, yaw) = tf.transformations.euler_from_quaternion([ trans.transform.rotation.x,  trans.transform.rotation.y,  trans.transform.rotation.z,  trans.transform.rotation.w])
+            
+            # Update x_robot with the transform (x, y, yaw)
+            robot_pose = np.array([trans.transform.translation.x, trans.transform.translation.y, yaw])
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
+            rospy.logwarn(f"Failed to get transform: {e}")
+        
+    return robot_pose
+
 
 # Update the SENSORS dictionary with the new entry for the Detection2D message
 SENSORS = [

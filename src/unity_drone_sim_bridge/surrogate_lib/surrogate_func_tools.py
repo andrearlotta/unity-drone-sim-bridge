@@ -51,42 +51,31 @@ def g_map_casadi(l4c_model, x_trees, norm=True):
     return f
 
 '''
-casadi map tools for fixed model dimension
-'''
-
-def setup_g_inline_casadi_fixed_cond(f):
-    drone_pos = ca.MX.sym('drone_pos', 2)
-    drone_yaw = ca.MX.sym('drone_yaw')
-    
-    tree_pos_single = ca.MX.sym('tree_pos_single',2)
-    var_cond_single = ca.MX.sym('tree_cond')
-
-    # Calculate condition for single tree
-    condition_single = fov_weight_fun_casadi(drone_pos, drone_yaw, ca.reshape(tree_pos_single, (1, 2)))
-    # Apply the condition to single inputs
-    y_single = f(drone_pos,drone_yaw, tree_pos_single) # condition_single * (f(drone_pos,drone_yaw, tree_pos_single)  - 0.5) + 0.5 
-
-    cond_y_single = ca.if_else(var_cond_single, y_single, 0.5)
-
-    # Create CasADi function for single evaluation
-    return ca.Function('F_single', [drone_pos, drone_yaw, tree_pos_single, var_cond_single], [cond_y_single])
-
-def g_map_casadi_fixed_cond(F_single, x_trees_dim, cond_=None):
-    F_mapped = F_single.map(x_trees_dim[0]) 
-    drone_pos_sym = ca.MX.sym('drone_pos', 2)
-    drone_yaw_sym = ca.MX.sym('drone_yaw')
-    tree_lambda_sym = ca.MX.sym('tree_lambda', x_trees_dim)
-    cond_sym = ca.MX.sym('tree_cond', x_trees_dim[0])
-    # Use mapped function
-    y_all = F_mapped(drone_pos_sym, drone_yaw_sym, tree_lambda_sym.T, cond_sym).T
-
-    return ca.Function('F_final', [drone_pos_sym, drone_yaw_sym, tree_lambda_sym, cond_sym], [y_all])
-
-'''
 cost function
 '''
 
-def entropy(lambda_):
+def entropy(lambda_in):
+    """
+    Calculates the entropy of a probability distribution.
+
+    Args:
+        lambda_: Probability distribution (CasADi MX or DM object).
+
+    Returns:
+        Entropy value (CasADi MX or DM object).
+    """
+    lambda_ = ca.MX.sym('lambda_sym', lambda_in.shape)
+    # Adding a small epsilon to avoid log(0)
+    epsilon = 1e-12
+    lambda_m = ca.fmax(lambda_, epsilon)  # To avoid log(0) issues
+    one_minus_lambda = ca.fmax(1 - lambda_m, epsilon)
+    res = -ca.sum1(lambda_m * ca.log10(lambda_m) / ca.log10(2) +
+                    one_minus_lambda * ca.log10(one_minus_lambda) / ca.log10(2))
+    f = ca.Function('F_single', [lambda_], [res])
+    return f
+
+
+def weighted_entropy(lambda_in , alpha_in):
     """
     Calculates the entropy of a probability distribution.
 
@@ -97,12 +86,16 @@ def entropy(lambda_):
         Entropy value (CasADi MX or DM object).
     """
     # Adding a small epsilon to avoid log(0)
+    drone_state1 = ca.MX.sym('lambda_sym', lambda_in.shape)
+    alpha = ca.MX.sym('alpha_sym', alpha_in.shape)
     epsilon = 1e-12
     lambda_ = ca.fmax(lambda_, epsilon)  # To avoid log(0) issues
     one_minus_lambda = ca.fmax(1 - lambda_, epsilon)
 
-    return -ca.sum1(lambda_ * ca.log10(lambda_) / ca.log10(2) +
+    res = -ca.sum1(lambda_ * ca.log10(lambda_) / ca.log10(2) +
                     one_minus_lambda * ca.log10(one_minus_lambda) / ca.log10(2))
+    f = ca.Function('F_single', [drone_state1, alpha], [res])
+    return f
 
 def entropy_np(lambda_):
     """

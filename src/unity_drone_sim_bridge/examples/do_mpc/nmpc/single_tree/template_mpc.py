@@ -29,7 +29,7 @@ import os
 import do_mpc
 
 
-def template_mpc(model,g, get_nn_input, silence_solver = False, rt=False):
+def template_mpc(model,silence_solver = False, rt=False):
     """
     --------------------------------------------------------------------------
     template_mpc: tuning parameters
